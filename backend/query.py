@@ -30,7 +30,7 @@ def get_embeddings():
     global _embeddings_model
     if _embeddings_model is None:
         _embeddings_model = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            model_name="sentence-transformers/paraphrase-MiniLM-L3-v2",
             model_kwargs={"device": "cpu"},
             encode_kwargs={"normalize_embeddings": True},
         )
