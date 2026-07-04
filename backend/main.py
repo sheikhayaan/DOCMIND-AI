@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
+import tempfile
 from pathlib import Path
 from uuid import uuid4
 
@@ -31,6 +32,7 @@ allowed_origins = [
     "http://127.0.0.1:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3001",
+    "https://ayaandevloper408-docmind-ai-backend.hf.space",
 ]
 if production_origin:
     if not production_origin.startswith(("http://", "https://")):
@@ -83,7 +85,7 @@ async def upload_pdf(file: UploadFile = File(...)) -> UploadResponse:
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
     doc_id = str(uuid4())
-    temp_dir = Path("/tmp")
+    temp_dir = Path(tempfile.gettempdir())
     temp_dir.mkdir(parents=True, exist_ok=True)
     safe_filename = Path(filename).name or f"{doc_id}.pdf"
     file_path = temp_dir / f"{doc_id}-{safe_filename}"
