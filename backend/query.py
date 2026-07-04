@@ -4,7 +4,7 @@ import re
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_pinecone import PineconeVectorStore
+from langchain_community.vectorstores import Pinecone as PineconeVectorStore
 
 from ingest import DOC_METADATA
 from observability import QueryTrace, extract_token_usage
