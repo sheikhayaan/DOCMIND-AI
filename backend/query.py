@@ -4,19 +4,16 @@ import re
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Pinecone as PineconeVectorStore
 
 from ingest import DOC_METADATA
 from observability import QueryTrace, extract_token_usage
 from rerank import rerank_chunks
 
-
 load_dotenv()
-
 
 _embeddings_model = None
 SYSTEM_PROMPT = (
-    "You are a helpful assistant. Answer the user's question using ONLY "
+    "You are a helpful assistant. Answer the user's question using ONLY"
     "the provided document context. If the answer is not in the context, "
     "say 'I could not find this information in the document.' "
     "Always be concise and direct."
@@ -29,7 +26,6 @@ REWRITE_SYSTEM_PROMPT = (
 )
 
 
-# Caches the HuggingFace embedding model so retrieval does not reload it per request.
 def get_embeddings():
     global _embeddings_model
     if _embeddings_model is None:
@@ -41,18 +37,15 @@ def get_embeddings():
     return _embeddings_model
 
 
-# Calculates cosine similarity between two equal-length vectors.
 def cosine_similarity(vector_a: list[float], vector_b: list[float]) -> float:
     dot_product = sum(a * b for a, b in zip(vector_a, vector_b))
     magnitude_a = sum(a * a for a in vector_a) ** 0.5
     magnitude_b = sum(b * b for b in vector_b) ** 0.5
     if magnitude_a == 0 or magnitude_b == 0:
         return 0
-
     return dot_product / (magnitude_a * magnitude_b)
 
 
-# Calculates average relevance between the question and retrieved chunks.
 def score_relevance(question: str, chunks: list) -> float:
     if not chunks:
         return 0
@@ -84,7 +77,6 @@ def score_relevance(question: str, chunks: list) -> float:
     return sum(overlap_scores) / len(overlap_scores)
 
 
-# Classifies a numeric relevance score into a user-facing confidence level.
 def classify_confidence(score: float) -> str:
     if score >= 0.35:
         return "high"
@@ -93,7 +85,6 @@ def classify_confidence(score: float) -> str:
     return "low"
 
 
-# Keeps only safe role/content conversation messages for GPT memory.
 def sanitize_history(history: list[dict] | None) -> list[dict]:
     if not history:
         return []
@@ -106,13 +97,11 @@ def sanitize_history(history: list[dict] | None) -> list[dict]:
             continue
         if not content.strip():
             continue
-
         sanitized_messages.append({"role": role, "content": content.strip()})
 
     return sanitized_messages[-8:]
 
 
-# Extracts a plain string from a LangChain chat model response.
 def get_llm_content(response: object) -> str:
     content = getattr(response, "content", "")
     if isinstance(content, str):
@@ -120,7 +109,6 @@ def get_llm_content(response: object) -> str:
     return str(content)
 
 
-# Rewrites a short or vague user question into a better retrieval query.
 def rewrite_query(original_query: str) -> str:
     try:
         client = ChatGroq(
@@ -141,7 +129,6 @@ def rewrite_query(original_query: str) -> str:
         return original_query
 
 
-# Finds chunks with exact keyword overlap against the user query.
 def keyword_search(query: str, doc_ids: list[str], chunks: list, top_k: int = 4) -> list:
     query_words = re.findall(r"\b\w+\b", query.lower())
     if not query_words:
@@ -163,7 +150,6 @@ def keyword_search(query: str, doc_ids: list[str], chunks: list, top_k: int = 4)
     return [chunk for _, chunk in scored_chunks[:top_k]]
 
 
-# Combines vector and keyword ranked results using Reciprocal Rank Fusion.
 def reciprocal_rank_fusion(vector_results: list, keyword_results: list, k: int = 60) -> list:
     fused_scores: dict[str, float] = {}
     chunks_by_content: dict[str, object] = {}
@@ -173,7 +159,6 @@ def reciprocal_rank_fusion(vector_results: list, keyword_results: list, k: int =
             content = chunk.page_content
             if not content:
                 continue
-
             chunks_by_content[content] = chunk
             fused_scores[content] = fused_scores.get(content, 0) + (1 / (k + rank))
 
@@ -185,12 +170,13 @@ def reciprocal_rank_fusion(vector_results: list, keyword_results: list, k: int =
     return [chunks_by_content[content] for content in ranked_contents]
 
 
-# Answers a user question by retrieving document chunks from Pinecone and asking Groq LLaMA.
 def answer_question(
     question: str,
     doc_ids: list[str] | str,
     history: list[dict] | None = None,
 ) -> dict:
+    from langchain_community.vectorstores import Pinecone as PineconeVectorStore
+
     index_name = os.getenv("PINECONE_INDEX_NAME")
     if not index_name:
         raise ValueError("PINECONE_INDEX_NAME is required")
@@ -239,7 +225,6 @@ def answer_question(
         fused = reciprocal_rank_fusion(vector_results, keyword_results)
         trace.mark("fusion", fused_count=len(fused))
 
-        # Cross-encoder rerank the fused candidates down to the final context set.
         chunks = rerank_chunks(rewritten_query, fused, top_k=4)
         trace.mark("rerank", final_chunk_count=len(chunks))
 

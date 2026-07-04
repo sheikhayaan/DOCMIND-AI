@@ -1,16 +1,11 @@
-# IMPORTANT: Pinecone index must use dimensions: 384
-# Delete old index and create new one with dimensions: 384
 import os
 import uuid
-
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Pinecone as PineconeVectorStore
 
 load_dotenv()
-
 
 SESSIONS = {}
 DOC_METADATA = {}
@@ -31,6 +26,8 @@ def get_embeddings():
 
 # Loads a PDF, chunks it, embeds it, and stores the vectors in Pinecone.
 def ingest_pdf(file_path: str, doc_id: str) -> int:
+    from langchain_community.vectorstores import Pinecone as PineconeVectorStore
+
     index_name = os.getenv("PINECONE_INDEX_NAME")
     if not index_name:
         raise ValueError("PINECONE_INDEX_NAME is required")
@@ -85,6 +82,8 @@ def create_session(doc_ids: list[str]) -> str:
 
 # Deletes all vectors for a document namespace from Pinecone.
 def delete_doc(doc_id: str) -> bool:
+    from langchain_community.vectorstores import Pinecone as PineconeVectorStore
+
     index_name = os.getenv("PINECONE_INDEX_NAME")
     if not index_name:
         raise ValueError("PINECONE_INDEX_NAME is required")
