@@ -4,6 +4,10 @@ import re
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
+try:
+    from langchain_pinecone import PineconeVectorStore
+except ImportError:
+    from langchain_pinecone import Pinecone as PineconeVectorStore
 
 from ingest import DOC_METADATA
 from observability import QueryTrace, extract_token_usage
@@ -13,16 +17,21 @@ load_dotenv()
 
 _embeddings_model = None
 SYSTEM_PROMPT = (
-    "You are a helpful assistant. Answer the user's question using ONLY"
-    "the provided document context. If the answer is not in the context, "
-    "say 'I could not find this information in the document.' "
-    "Always be concise and direct."
+    "You are a precise, polished RAG assistant for PDF question answering. "
+    "Answer using ONLY the provided document context. If the answer is not "
+    "supported by the context, say 'I could not find this information in the "
+    "document.' Do not guess or add outside knowledge. Write in a clear, "
+    "well-structured style: start with the direct answer, then add concise "
+    "supporting details when useful. Use bullets or short sections for "
+    "multi-part answers. Mention page numbers when the context provides them. "
+    "Keep the answer beautiful, readable, and focused on the user's question."
 )
 REWRITE_SYSTEM_PROMPT = (
-    "You are a search query optimizer. Rewrite the user's question into a "
-    "detailed search query that will retrieve the most relevant document "
-    "chunks from a vector database. Make it specific and expand acronyms. "
-    "Return ONLY the rewritten query, nothing else."
+    "You are a semantic search query optimizer for a RAG chatbot. Rewrite the "
+    "user's question as one short natural-language search query for document "
+    "chunks. Preserve the user's intent and important nouns. Do not write SQL, "
+    "code, filters, Boolean syntax, or explanations. Return ONLY the rewritten "
+    "query."
 )
 
 
@@ -30,7 +39,7 @@ def get_embeddings():
     global _embeddings_model
     if _embeddings_model is None:
         _embeddings_model = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/paraphrase-MiniLM-L3-v2",
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
             model_kwargs={"device": "cpu"},
             encode_kwargs={"normalize_embeddings": True},
         )
@@ -78,9 +87,9 @@ def score_relevance(question: str, chunks: list) -> float:
 
 
 def classify_confidence(score: float) -> str:
-    if score >= 0.35:
+    if score >= 0.22:
         return "high"
-    if score >= 0.20:
+    if score >= 0.12:
         return "medium"
     return "low"
 
@@ -109,7 +118,18 @@ def get_llm_content(response: object) -> str:
     return str(content)
 
 
+# Detects generated rewrites that look like database syntax instead of search text.
+def is_invalid_rewrite(rewritten_query: str) -> bool:
+    normalized = rewritten_query.strip().lower()
+    sql_markers = ("select ", " from ", " where ", " contains ", "vector_similarity")
+    return any(marker in normalized for marker in sql_markers)
+
+
+# Rewrites a user question into a concise semantic search query.
 def rewrite_query(original_query: str) -> str:
+    if os.getenv("ENABLE_QUERY_REWRITE", "false").lower() not in {"1", "true", "yes"}:
+        return original_query
+
     try:
         client = ChatGroq(
             model="llama-3.1-8b-instant",
@@ -124,7 +144,10 @@ def rewrite_query(original_query: str) -> str:
             ]
         )
         rewritten_query = get_llm_content(response)
-        return rewritten_query.strip() or original_query
+        rewritten_query = rewritten_query.strip()
+        if not rewritten_query or is_invalid_rewrite(rewritten_query):
+            return original_query
+        return rewritten_query
     except Exception:
         return original_query
 
@@ -175,8 +198,6 @@ def answer_question(
     doc_ids: list[str] | str,
     history: list[dict] | None = None,
 ) -> dict:
-    from langchain_community.vectorstores import Pinecone as PineconeVectorStore
-
     index_name = os.getenv("PINECONE_INDEX_NAME")
     if not index_name:
         raise ValueError("PINECONE_INDEX_NAME is required")

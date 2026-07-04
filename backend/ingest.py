@@ -2,6 +2,10 @@ import os
 import uuid
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
+try:
+    from langchain_pinecone import PineconeVectorStore
+except ImportError:
+    from langchain_pinecone import Pinecone as PineconeVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -17,7 +21,7 @@ def get_embeddings():
     global _embeddings_model
     if _embeddings_model is None:
         _embeddings_model = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/paraphrase-MiniLM-L3-v2",
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
             model_kwargs={"device": "cpu"},
             encode_kwargs={"normalize_embeddings": True},
         )
@@ -26,8 +30,6 @@ def get_embeddings():
 
 # Loads a PDF, chunks it, embeds it, and stores the vectors in Pinecone.
 def ingest_pdf(file_path: str, doc_id: str) -> int:
-    from langchain_community.vectorstores import Pinecone as PineconeVectorStore
-
     index_name = os.getenv("PINECONE_INDEX_NAME")
     if not index_name:
         raise ValueError("PINECONE_INDEX_NAME is required")
@@ -82,8 +84,6 @@ def create_session(doc_ids: list[str]) -> str:
 
 # Deletes all vectors for a document namespace from Pinecone.
 def delete_doc(doc_id: str) -> bool:
-    from langchain_community.vectorstores import Pinecone as PineconeVectorStore
-
     index_name = os.getenv("PINECONE_INDEX_NAME")
     if not index_name:
         raise ValueError("PINECONE_INDEX_NAME is required")
