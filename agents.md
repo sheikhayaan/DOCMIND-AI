@@ -3,7 +3,7 @@
 ## Project
 RAG Chatbot — users upload PDFs and ask questions answered by AI.
 Frontend: Next.js 14, Tailwind CSS, Framer Motion, TypeScript.
-Backend: Python FastAPI, LangChain, OpenAI API, Pinecone.
+Backend: Python FastAPI, LangChain, Groq (llama-3.1-8b-instant), Pinecone, HuggingFace embeddings.
 
 ## Rules — never break these
 - Never install new npm or pip packages without listing them in a comment

@@ -1,11 +1,14 @@
-# RAG Chatbot
+# DocMind AI
 
-RAG Chatbot lets users upload PDFs and ask questions answered with document-grounded AI.
+DocMind AI lets users upload PDFs and ask questions answered with document-grounded AI.
+
+**Live demo:** https://docmind-ai-dusky.vercel.app
 
 ## Stack
 
 - Frontend: Next.js, TypeScript, Tailwind CSS, Framer Motion
-- Backend: FastAPI, LangChain, OpenAI, Pinecone
+- Backend: FastAPI, LangChain, Groq (`llama-3.1-8b-instant`), Pinecone
+- Embeddings: HuggingFace `sentence-transformers/all-MiniLM-L6-v2` (384 dims, local/CPU)
 - Frontend deployment: Vercel
 - Backend deployment: Render free tier
 
@@ -59,7 +62,7 @@ uvicorn main:app --reload
 Set `backend/.env`:
 
 ```env
-OPENAI_API_KEY=your_openai_api_key
+GROQ_API_KEY=your_groq_api_key
 PINECONE_API_KEY=your_pinecone_api_key
 PINECONE_INDEX_NAME=your_pinecone_index_name
 FRONTEND_URL=http://localhost:3000
@@ -72,14 +75,16 @@ The backend runs at `http://localhost:8000` by default.
 1. Create or log in to a Pinecone account.
 2. Create a new index.
 3. Use these index settings:
-   - Dimensions: `1536`
+   - Dimensions: `384`
    - Metric: `cosine`
    - Vector type: dense
 4. Use a serverless/free-tier compatible cloud and region.
 5. Copy the index name into `PINECONE_INDEX_NAME`.
 6. Copy your Pinecone API key into `PINECONE_API_KEY`.
 
-The dimension must be `1536` because the backend uses OpenAI `text-embedding-3-small`.
+The dimension must be `384` because the backend embeds locally with HuggingFace
+`sentence-transformers/all-MiniLM-L6-v2`. No external embedding API is used, so
+ingestion works offline and costs nothing per document.
 
 ## Deploy Backend To Render
 
@@ -92,7 +97,7 @@ The dimension must be `1536` because the backend uses OpenAI `text-embedding-3-s
    - Build command: `pip install -r requirements.txt`
    - Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 5. Add these Render environment variables:
-   - `OPENAI_API_KEY`
+   - `GROQ_API_KEY`
    - `PINECONE_API_KEY`
    - `PINECONE_INDEX_NAME`
    - `FRONTEND_URL`
@@ -152,7 +157,7 @@ Before relying on `/api/...` rewrites, replace `RENDER_URL` with your actual Ren
 Render backend:
 
 ```env
-OPENAI_API_KEY=your_openai_api_key
+GROQ_API_KEY=your_groq_api_key
 PINECONE_API_KEY=your_pinecone_api_key
 PINECONE_INDEX_NAME=your_pinecone_index_name
 FRONTEND_URL=https://your-project.vercel.app
