@@ -87,9 +87,19 @@ def score_relevance(question: str, chunks: list) -> float:
 
 
 def classify_confidence(score: float) -> str:
-    if score >= 0.22:
+    """Band an average retrieval similarity as high / medium / low.
+
+    The thresholds are calibrated for all-MiniLM-L6-v2 with normalised
+    embeddings, which is what get_embeddings() serves: unrelated pairs land
+    under ~0.20, a genuinely relevant chunk sits at 0.35 and above. They are
+    load-bearing rather than cosmetic -- a "low" band makes the generator
+    explicit that the context may not answer the question, which is the whole
+    promise of this app. Retune them together with the embedding model, not
+    apart from it.
+    """
+    if score >= 0.35:
         return "high"
-    if score >= 0.12:
+    if score >= 0.20:
         return "medium"
     return "low"
 
