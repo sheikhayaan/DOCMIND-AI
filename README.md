@@ -1,220 +1,136 @@
 # DocMind AI
 
-DocMind AI lets users upload PDFs and ask questions answered with document-grounded AI.
+**Ask a question about a PDF and get an answer you can check — with the passage it came from.**
 
-**Live demo:** https://docmind-ai-dusky.vercel.app
+Upload a document, ask in plain language, and read the answer next to the retrieved
+chunks that produced it. Retrieval is hybrid (vector + keyword, fused), the reranker
+is optional, and the system prompt is allowed exactly one escape hatch:
+*"I could not find this information in the document."*
 
-## Stack
+`Next.js` `TypeScript` `FastAPI` `LangChain` `Pinecone` `Groq`
 
-- Frontend: Next.js, TypeScript, Tailwind CSS, Framer Motion
-- Backend: FastAPI, LangChain, Groq (`llama-3.1-8b-instant`), Pinecone
-- Embeddings: HuggingFace `sentence-transformers/all-MiniLM-L6-v2` (384 dims, local/CPU)
-- Frontend deployment: Vercel
-- Backend deployment: Render free tier
+**[Live demo →](https://docmind-ai-dusky.vercel.app)**
 
-## Project Structure
+---
 
-```text
-.
-|-- frontend/
-|   |-- app/
-|   |-- lib/api.ts
-|   |-- .env.local.example
-|   `-- vercel.json
-`-- backend/
-    |-- main.py
-    |-- ingest.py
-    |-- query.py
-    |-- models.py
-    |-- requirements.txt
-    |-- .env.example
-    `-- render.yaml
+## Why this exists
+
+A long document plus a chatbot that guesses is worse than no chatbot, because a
+fluent wrong answer costs more time than reading the section yourself. So the design
+goal was not "answer more questions" — it was "never answer a question the document
+doesn't answer, and make every answer auditable in one glance".
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Ingest
+        PDF[PDF upload] --> CH[RecursiveCharacterTextSplitter<br/>1000 / 200]
+        CH --> EMB[all-MiniLM-L6-v2<br/>CPU, 384-d]
+        EMB --> PC[("Pinecone<br/>namespace = doc_id")]
+    end
+    subgraph Query
+        Q[question] --> RW[rewrite<br/>+ syntax guard]
+        RW --> VS[vector search k=8]
+        RW --> KW[keyword search]
+        VS --> RRF[reciprocal rank fusion k=60]
+        KW --> RRF
+        RRF --> RR{reranker<br/>enabled?}
+        RR -->|yes| CE[cross-encoder<br/>top 4]
+        RR -->|no| T4[top 4 by fusion]
+        CE --> GEN[Groq · answer]
+        T4 --> GEN
+        GEN --> OUT[answer + sources + confidence]
+    end
 ```
 
-## Local Frontend Setup
+**Request path.** `POST /upload` extracts and chunks the PDF, embeds it locally, and
+upserts into a Pinecone namespace named after the document id. `POST /session` binds a
+chat session to one or more document ids. `POST /query` rewrites the question, runs
+vector and keyword retrieval in parallel, fuses the ranked lists with
+reciprocal-rank fusion, optionally reranks the head of that list with a cross-encoder,
+and generates from four chunks.
+
+## Design decisions
+
+1. **Local embeddings, not a hosted embedding API.** `all-MiniLM-L6-v2` on CPU costs
+   nothing per document, keeps ingestion working when the chat provider is down, and
+   removes a second vendor from the critical path. The trade-off is 384 dimensions
+   instead of 1536 — for single-document retrieval that was the right side of the deal.
+2. **Hybrid retrieval, because one retriever is always wrong somewhere.** Vector search
+   misses exact identifiers (`RFC 9110`, `HX711`, section numbers); keyword search
+   misses paraphrase. Reciprocal-rank fusion needs no score calibration between the
+   two, which is why it is used instead of a weighted sum.
+3. **The reranker is opt-in.** A cross-encoder measurably improves the top of the list
+   and adds a model download plus roughly a second of latency. `ENABLE_RERANKER`
+   defaults to off, and when it is off the fusion order is preserved rather than
+   silently re-sorted.
+4. **The rewrite step is guarded.** Asking a model to rewrite a question into a search
+   query invites it to emit SQL or Boolean syntax that the retriever cannot use.
+   `is_invalid_rewrite()` rejects that output and falls back to the original question.
+5. **Citation over confidence.** Answers carry the retrieved chunks and a confidence
+   band derived from similarity scores; the UI shows both. A user who can see the
+   source does not need to trust the model.
+6. **Evaluation is part of the repo.** `backend/evaluate.py` scores retrieval and answer
+   quality with a judge model over a case set, so a retrieval change is measured, not
+   argued about.
+
+## Project layout
+
+```
+backend/    FastAPI: main.py (routes) · ingest.py (chunk/embed/upsert)
+            query.py (rewrite → hybrid → RRF → rerank → generate)
+            rerank.py (optional cross-encoder) · evaluate.py · observability.py
+            tests/ (pipeline, query, evaluate)
+frontend/   Next.js App Router: chat UI, streaming, source cards
+```
+
+## Quick start
 
 ```bash
+# backend
+cd backend
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env      # GROQ_API_KEY, PINECONE_API_KEY, PINECONE_INDEX_NAME, FRONTEND_URL
+uvicorn main:app --reload --port 8000
+
+# frontend
 cd frontend
 npm install
-copy .env.local.example .env.local
-npm run dev
+# point the client at the API (see frontend/lib/api.ts); default is :8000
+npm run dev                        # http://localhost:3000
 ```
 
-Set `frontend/.env.local`:
+Optional: `ENABLE_RERANKER=true` turns on the cross-encoder path (downloads
+`cross-encoder/ms-marco-MiniLM-L-6-v2` on first use).
 
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-The frontend runs at `http://localhost:3000` by default.
-
-## Local Backend Setup
+## Tests
 
 ```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-copy .env.example .env
-uvicorn main:app --reload
+cd backend && pytest -q          # pipeline, query, evaluation harness
+cd frontend && npm run lint
 ```
 
-Set `backend/.env`:
+CI runs the backend suite on every push.
 
-```env
-GROQ_API_KEY=your_groq_api_key
-PINECONE_API_KEY=your_pinecone_api_key
-PINECONE_INDEX_NAME=your_pinecone_index_name
-FRONTEND_URL=http://localhost:3000
-```
+## Limits
 
-The backend runs at `http://localhost:8000` by default.
+- **One document at a time, in practice.** Sessions accept several ids, but the
+  retrieval tuning (`k=8`, top 4) is calibrated for a single PDF, not a corpus.
+- **Pinecone is a hard dependency for ingest.** No local fallback vector store ships.
+- **Metadata lives in process memory.** `DOC_METADATA` is a module-level dict, so a
+  restart loses filename/page mapping for previously ingested documents.
+- **Free-tier hosting sleeps.** The Vercel frontend is always warm; the API is not, so
+  the first query after idle can take several seconds.
 
-## Pinecone Setup
+## Deploy
 
-1. Create or log in to a Pinecone account.
-2. Create a new index.
-3. Use these index settings:
-   - Dimensions: `384`
-   - Metric: `cosine`
-   - Vector type: dense
-4. Use a serverless/free-tier compatible cloud and region.
-5. Copy the index name into `PINECONE_INDEX_NAME`.
-6. Copy your Pinecone API key into `PINECONE_API_KEY`.
+Backend: `backend/render.yaml` (Render) or the included `Dockerfile`.
+Frontend: `frontend/vercel.json`, with `NEXT_PUBLIC_API_URL` pointed at the API origin
+and `FRONTEND_URL` set on the backend for CORS.
 
-The dimension must be `384` because the backend embeds locally with HuggingFace
-`sentence-transformers/all-MiniLM-L6-v2`. No external embedding API is used, so
-ingestion works offline and costs nothing per document.
+## Author
 
-## Deploy Backend To Render
-
-1. Push this project to GitHub.
-2. Go to Render and create a new Blueprint or Web Service.
-3. If using Blueprint, point Render to `backend/render.yaml`.
-4. If creating a Web Service manually, use:
-   - Root directory: `backend`
-   - Runtime: Python
-   - Build command: `pip install -r requirements.txt`
-   - Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-5. Add these Render environment variables:
-   - `GROQ_API_KEY`
-   - `PINECONE_API_KEY`
-   - `PINECONE_INDEX_NAME`
-   - `FRONTEND_URL`
-6. Set `FRONTEND_URL` to your Vercel production URL after the frontend is deployed, for example:
-
-```env
-FRONTEND_URL=https://your-project.vercel.app
-```
-
-7. Deploy the service.
-8. After deployment, test:
-
-```text
-https://your-render-service.onrender.com/health
-```
-
-Expected response:
-
-```json
-{"status":"ok","version":"1.0.0"}
-```
-
-## Deploy Frontend To Vercel
-
-1. Go to Vercel and import the GitHub repository.
-2. Set the frontend root directory to `frontend`.
-3. Add this Vercel environment variable:
-
-```env
-NEXT_PUBLIC_API_URL=https://your-render-service.onrender.com
-```
-
-4. Deploy the frontend.
-5. Copy the Vercel production URL.
-6. Go back to Render and set backend `FRONTEND_URL` to that Vercel URL.
-7. Redeploy or restart the Render backend so CORS uses the new value.
-
-## Vercel Rewrite Note
-
-`frontend/vercel.json` includes a placeholder rewrite:
-
-```json
-{
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "RENDER_URL/api/:path*"
-    }
-  ]
-}
-```
-
-Before relying on `/api/...` rewrites, replace `RENDER_URL` with your actual Render backend URL. The current frontend API utility uses `NEXT_PUBLIC_API_URL`, so setting that environment variable is the required deployment step.
-
-## Environment Variables By Platform
-
-Render backend:
-
-```env
-GROQ_API_KEY=your_groq_api_key
-PINECONE_API_KEY=your_pinecone_api_key
-PINECONE_INDEX_NAME=your_pinecone_index_name
-FRONTEND_URL=https://your-project.vercel.app
-```
-
-Vercel frontend:
-
-```env
-NEXT_PUBLIC_API_URL=https://your-render-service.onrender.com
-```
-
-Local frontend:
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-## Verification
-
-Frontend:
-
-```bash
-cd frontend
-npm run lint
-npm run build
-npm run dev
-```
-
-Backend:
-
-```bash
-cd backend
-uvicorn main:app --reload
-```
-
-Upload test:
-
-```text
-POST /upload
-multipart/form-data field: file
-```
-
-Expected shape:
-
-```json
-{"success":true,"doc_id":"...","filename":"...","chunk_count":1,"message":"PDF uploaded and ingested successfully"}
-```
-
-Query test:
-
-```text
-POST /query
-{"question":"What is this document about?","doc_id":"..."}
-```
-
-Expected shape:
-
-```json
-{"success":true,"answer":"...","sources":[{"page":1,"text":"..."}],"doc_id":"..."}
-```
+**Mohd Ayaan** — [github.com/sheikhayaan](https://github.com/sheikhayaan) ·
+[LinkedIn](https://linkedin.com/in/mohd-ayaan-7731b4381)
