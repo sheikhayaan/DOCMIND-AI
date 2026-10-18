@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="730" viewBox="0 0 1280 730" role="img">
+  <defs>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softglow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="16" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#05070d"/>
+      <stop offset="55%" stop-color="#070b16"/>
+      <stop offset="100%" stop-color="#0a0714"/>
+    </linearGradient>
+    <linearGradient id="blueViolet" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#22d3ee"/>
+      <stop offset="50%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="violetRose" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#f43f5e"/>
+    </linearGradient>
+    <linearGradient id="emeraldCyan" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+    <radialGradient id="haloBlue" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="haloViolet" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#a855f7" stop-opacity="0.40"/>
+      <stop offset="100%" stop-color="#a855f7" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#ffffff" stroke-opacity="0.035" stroke-width="1"/>
+    </pattern>
+    
+  </defs>
+  <rect width="1280" height="730" fill="url(#bgGrad)"/>
+  <rect width="1280" height="730" fill="url(#grid)"/>
+<text x="56" y="46" font-family="'JetBrains Mono','SFMono-Regular',Consolas,monospace" font-size="11" letter-spacing="2.4" fill="#22d3ee" opacity="0.9">SYSTEM ARCHITECTURE</text><marker id="head-3b82f6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#3b82f6"/></marker>
+    <marker id="head-22d3ee" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#22d3ee"/></marker>
+    <marker id="head-a855f7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#a855f7"/></marker>
+    <marker id="head-10b981" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#10b981"/></marker>
+    <marker id="head-f59e0b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#f59e0b"/></marker><rect x="56" y="66" width="1168" height="128" rx="18" fill="#22d3ee" fill-opacity="0.045" stroke="#22d3ee" stroke-opacity="0.28" stroke-dasharray="6 6"/><text x="74" y="90" font-family="'JetBrains Mono','SFMono-Regular',Consolas,monospace" font-size="10.5" letter-spacing="2" fill="#22d3ee">CLIENT · NEXT.JS 15 APP ROUTER</text><rect x="56" y="218" width="1168" height="116" rx="18" fill="#3b82f6" fill-opacity="0.045" stroke="#3b82f6" stroke-opacity="0.28" stroke-dasharray="6 6"/><text x="74" y="242" font-family="'JetBrains Mono','SFMono-Regular',Consolas,monospace" font-size="10.5" letter-spacing="2" fill="#3b82f6">EDGE · GATEWAY</text><rect x="56" y="358" width="1168" height="176" rx="18" fill="#a855f7" fill-opacity="0.045" stroke="#a855f7" stroke-opacity="0.28" stroke-dasharray="6 6"/><text x="74" y="382" font-family="'JetBrains Mono','SFMono-Regular',Consolas,monospace" font-size="10.5" letter-spacing="2" fill="#a855f7">RAG CORE · RETRIEVAL-AUGMENTED GENERATION</text><rect x="56" y="558" width="1168" height="132" rx="18" fill="#10b981" fill-opacity="0.045" stroke="#10b981" stroke-opacity="0.28" stroke-dasharray="6 6"/><text x="74" y="582" font-family="'JetBrains Mono','SFMono-Regular',Consolas,monospace" font-size="10.5" letter-spacing="2" fill="#10b981">STATE · STORAGE · MODELS</text><g>
+<rect x="88" y="104" width="262" height="74" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#22d3ee" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="88" y="104" width="262" height="3" rx="1.5" fill="#22d3ee" filter="url(#glow)"/>
+<text x="219.0" y="132" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="14" font-weight="700" fill="#e8eefc" text-anchor="middle">Landing</text>
+<text x="219.0" y="154" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">dropzone · slot meter</text>
+</g><g>
+<rect x="374" y="104" width="262" height="74" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#22d3ee" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="374" y="104" width="262" height="3" rx="1.5" fill="#22d3ee" filter="url(#glow)"/>
+<text x="505.0" y="132" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="14" font-weight="700" fill="#e8eefc" text-anchor="middle">Chat</text>
+<text x="505.0" y="154" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">transcript · sources</text>
+</g><g>
+<rect x="660" y="104" width="262" height="74" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#22d3ee" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="660" y="104" width="262" height="3" rx="1.5" fill="#22d3ee" filter="url(#glow)"/>
+<text x="791.0" y="132" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="14" font-weight="700" fill="#e8eefc" text-anchor="middle">History</text>
+<text x="791.0" y="154" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">localStorage drawer</text>
+</g><g>
+<rect x="946" y="104" width="262" height="74" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#22d3ee" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="946" y="104" width="262" height="3" rx="1.5" fill="#22d3ee" filter="url(#glow)"/>
+<text x="1077.0" y="132" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="14" font-weight="700" fill="#e8eefc" text-anchor="middle">Admin</text>
+<text x="1077.0" y="154" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">metrics · users</text>
+</g><g>
+<rect x="88" y="250" width="262" height="68" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#3b82f6" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="88" y="250" width="262" height="3" rx="1.5" fill="#3b82f6" filter="url(#glow)"/>
+<text x="219.0" y="278" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="14" font-weight="700" fill="#e8eefc" text-anchor="middle">Middleware</text>
+<text x="219.0" y="300" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">route guard · CSP nonce</text>
+</g><g>
+<rect x="374" y="250" width="262" height="68" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#3b82f6" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="374" y="250" width="262" height="3" rx="1.5" fill="#3b82f6" filter="url(#glow)"/>
+<text x="505.0" y="278" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="14" font-weight="700" fill="#e8eefc" text-anchor="middle">FastAPI Gateway</text>
+<text x="505.0" y="300" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">JWT · rate limit · CORS</text>
+</g><g>
+<rect x="660" y="250" width="262" height="68" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#3b82f6" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="660" y="250" width="262" height="3" rx="1.5" fill="#3b82f6" filter="url(#glow)"/>
+<text x="791.0" y="278" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="14" font-weight="700" fill="#e8eefc" text-anchor="middle">reCAPTCHA + Sentry</text>
+<text x="791.0" y="300" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">bot &amp; error control</text>
+</g><g>
+<rect x="946" y="250" width="262" height="68" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#3b82f6" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="946" y="250" width="262" height="3" rx="1.5" fill="#3b82f6" filter="url(#glow)"/>
+<text x="1077.0" y="278" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="14" font-weight="700" fill="#e8eefc" text-anchor="middle">Job Queue</text>
+<text x="1077.0" y="300" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">inline thread or Celery</text>
+</g><g>
+<rect x="70" y="392" width="212" height="118" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#a855f7" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="70" y="392" width="212" height="3" rx="1.5" fill="#a855f7" filter="url(#glow)"/>
+<text x="176.0" y="420" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="13" font-weight="700" fill="#e8eefc" text-anchor="middle">Intent Router</text>
+<text x="176.0" y="442" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">page · metadata · deictic</text>
+</g><g>
+<rect x="302" y="392" width="212" height="118" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#a855f7" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="302" y="392" width="212" height="3" rx="1.5" fill="#a855f7" filter="url(#glow)"/>
+<text x="408.0" y="420" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="13" font-weight="700" fill="#e8eefc" text-anchor="middle">Retriever</text>
+<text x="408.0" y="442" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">vector + keyword hybrid</text>
+</g><g>
+<rect x="534" y="392" width="212" height="118" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#a855f7" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="534" y="392" width="212" height="3" rx="1.5" fill="#a855f7" filter="url(#glow)"/>
+<text x="640.0" y="420" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="13" font-weight="700" fill="#e8eefc" text-anchor="middle">Reranker</text>
+<text x="640.0" y="442" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">cross-encoder boost</text>
+</g><g>
+<rect x="766" y="392" width="212" height="118" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#a855f7" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="766" y="392" width="212" height="3" rx="1.5" fill="#a855f7" filter="url(#glow)"/>
+<text x="872.0" y="420" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="13" font-weight="700" fill="#e8eefc" text-anchor="middle">Composer</text>
+<text x="872.0" y="442" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">Groq llama-3.3-70b</text>
+</g><g>
+<rect x="998" y="392" width="212" height="118" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#a855f7" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="998" y="392" width="212" height="3" rx="1.5" fill="#a855f7" filter="url(#glow)"/>
+<text x="1104.0" y="420" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="13" font-weight="700" fill="#e8eefc" text-anchor="middle">Citation Audit</text>
+<text x="1104.0" y="442" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">inline ⊂ sources</text>
+</g><g>
+<rect x="70" y="594" width="212" height="74" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#10b981" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="70" y="594" width="212" height="3" rx="1.5" fill="#10b981" filter="url(#glow)"/>
+<text x="176.0" y="622" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="13" font-weight="700" fill="#e8eefc" text-anchor="middle">Pinecone</text>
+<text x="176.0" y="644" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">384-d cosine index</text>
+</g><g>
+<rect x="302" y="594" width="212" height="74" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#10b981" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="302" y="594" width="212" height="3" rx="1.5" fill="#10b981" filter="url(#glow)"/>
+<text x="408.0" y="622" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="13" font-weight="700" fill="#e8eefc" text-anchor="middle">SQLite</text>
+<text x="408.0" y="644" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">users · sessions · docs</text>
+</g><g>
+<rect x="534" y="594" width="212" height="74" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#10b981" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="534" y="594" width="212" height="3" rx="1.5" fill="#10b981" filter="url(#glow)"/>
+<text x="640.0" y="622" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="13" font-weight="700" fill="#e8eefc" text-anchor="middle">Redis</text>
+<text x="640.0" y="644" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">Celery broker · counters</text>
+</g><g>
+<rect x="766" y="594" width="212" height="74" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#10b981" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="766" y="594" width="212" height="3" rx="1.5" fill="#10b981" filter="url(#glow)"/>
+<text x="872.0" y="622" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="13" font-weight="700" fill="#e8eefc" text-anchor="middle">Groq LPU</text>
+<text x="872.0" y="644" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">sub-second inference</text>
+</g><g>
+<rect x="998" y="594" width="212" height="74" rx="12" fill="#0b1120" fill-opacity="0.92" stroke="#10b981" stroke-opacity="0.55" stroke-width="1.4"/>
+<rect x="998" y="594" width="212" height="3" rx="1.5" fill="#10b981" filter="url(#glow)"/>
+<text x="1104.0" y="622" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="13" font-weight="700" fill="#e8eefc" text-anchor="middle">MiniLM</text>
+<text x="1104.0" y="644" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="11.5" fill="#8b9bb4" text-anchor="middle">local embedding model</text>
+</g><line x1="219" y1="178" x2="219" y2="246" stroke="#3b82f6" stroke-opacity="0.85" stroke-width="1.8" marker-end="url(#head-3b82f6)" filter="url(#glow)"/><line x1="505" y1="178" x2="505" y2="246" stroke="#3b82f6" stroke-opacity="0.85" stroke-width="1.8" marker-end="url(#head-3b82f6)" filter="url(#glow)"/><line x1="791" y1="178" x2="791" y2="246" stroke="#3b82f6" stroke-opacity="0.85" stroke-width="1.8" marker-end="url(#head-3b82f6)" filter="url(#glow)"/><line x1="1077" y1="178" x2="1077" y2="246" stroke="#3b82f6" stroke-opacity="0.85" stroke-width="1.8" marker-end="url(#head-3b82f6)" filter="url(#glow)"/><line x1="176" y1="318" x2="176" y2="388" stroke="#a855f7" stroke-opacity="0.85" stroke-width="1.8" marker-end="url(#head-a855f7)" filter="url(#glow)"/><line x1="408" y1="318" x2="408" y2="388" stroke="#a855f7" stroke-opacity="0.85" stroke-width="1.8" marker-end="url(#head-a855f7)" filter="url(#glow)"/><line x1="640" y1="318" x2="640" y2="388" stroke="#a855f7" stroke-opacity="0.85" stroke-width="1.8" marker-end="url(#head-a855f7)" filter="url(#glow)"/><line x1="872" y1="318" x2="872" y2="388" stroke="#a855f7" stroke-opacity="0.85" stroke-width="1.8" marker-end="url(#head-a855f7)" filter="url(#glow)"/><line x1="1104" y1="318" x2="1104" y2="388" stroke="#a855f7" stroke-opacity="0.85" stroke-width="1.8" marker-end="url(#head-a855f7)" filter="url(#glow)"/><line x1="176" y1="512" x2="176" y2="590" stroke="#10b981" stroke-opacity="0.85" stroke-width="1.8" marker-end="url(#head-10b981)" filter="url(#glow)"/><line x1="408" y1="512" x2="408" y2="590" stroke="#10b981" stroke-opacity="0.85" stroke-width="1.8" marker-end="url(#head-10b981)" filter="url(#glow)"/><line x1="640" y1="512" x2="640" y2="590" stroke="#10b981" stroke-opacity="0.85" stroke-width="1.8" marker-end="url(#head-10b981)" filter="url(#glow)"/><line x1="872" y1="512" x2="872" y2="590" stroke="#10b981" stroke-opacity="0.85" stroke-width="1.8" marker-end="url(#head-10b981)" filter="url(#glow)"/><line x1="1104" y1="512" x2="1104" y2="590" stroke="#10b981" stroke-opacity="0.85" stroke-width="1.8" marker-end="url(#head-10b981)" filter="url(#glow)"/>
+</svg>

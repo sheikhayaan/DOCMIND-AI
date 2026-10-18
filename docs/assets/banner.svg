@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="452" viewBox="0 0 1280 452" role="img">
+  <defs>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softglow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="16" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#05070d"/>
+      <stop offset="55%" stop-color="#070b16"/>
+      <stop offset="100%" stop-color="#0a0714"/>
+    </linearGradient>
+    <linearGradient id="blueViolet" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#22d3ee"/>
+      <stop offset="50%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="violetRose" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#f43f5e"/>
+    </linearGradient>
+    <linearGradient id="emeraldCyan" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+    <radialGradient id="haloBlue" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="haloViolet" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#a855f7" stop-opacity="0.40"/>
+      <stop offset="100%" stop-color="#a855f7" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#ffffff" stroke-opacity="0.035" stroke-width="1"/>
+    </pattern>
+    
+  </defs>
+  <rect width="1280" height="452" fill="url(#bgGrad)"/>
+  <rect width="1280" height="452" fill="url(#grid)"/>
+
+  <ellipse cx="180" cy="60" rx="380" ry="240" fill="url(#haloBlue)"/>
+  <ellipse cx="1120" cy="300" rx="380" ry="240" fill="url(#haloViolet)"/>
+  <ellipse cx="640" cy="180" rx="300" ry="150" fill="url(#haloBlue)" opacity="0.5"/>
+<circle cx="640" cy="196" r="186" fill="none" stroke="url(#blueViolet)" stroke-opacity="0.2" stroke-width="1.1" stroke-dasharray="5 9"/><circle cx="640" cy="196" r="150" fill="none" stroke="url(#blueViolet)" stroke-opacity="0.3" stroke-width="1.1" stroke-dasharray="5 9"/><circle cx="640" cy="196" r="112" fill="none" stroke="url(#blueViolet)" stroke-opacity="0.42" stroke-width="1.1" stroke-dasharray="5 9"/><circle cx="640" cy="196" r="76" fill="url(#haloBlue)"/>
+  <g filter="url(#softglow)">
+    <path d="M612 152 h44 a10 10 0 0 1 10 10 v72 a10 10 0 0 1 -10 10 h-44 a10 10 0 0 1 -10 -10 v-72 a10 10 0 0 1 10 -10 z"
+          fill="none" stroke="url(#blueViolet)" stroke-width="3"/>
+    <path d="M620 176 h40 M620 192 h40 M620 208 h26" stroke="url(#blueViolet)" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <circle cx="640" cy="196" r="98" fill="none" stroke="#22d3ee" stroke-opacity="0.18" stroke-width="1"/>
+
+  <text x="640" y="330" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="52" font-weight="800" letter-spacing="-1.5"
+        fill="#e8eefc" text-anchor="middle">DOCMIND <tspan fill="url(#blueViolet)">AI</tspan></text>
+  <text x="640" y="364" font-family="'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-size="17" fill="#8b9bb4" text-anchor="middle">
+    Retrieval-augmented answers that always cite the page they came from
+  </text>
+<rect x="355.0" y="392" width="90" height="30" rx="15" fill="#22d3ee" fill-opacity="0.10" stroke="#22d3ee" stroke-opacity="0.55"/><text x="400.0" y="412" font-family="'JetBrains Mono','SFMono-Regular',Consolas,monospace" font-size="12" fill="#22d3ee" text-anchor="middle">FastAPI</text><rect x="455.0" y="392" width="114" height="30" rx="15" fill="#e8eefc" fill-opacity="0.10" stroke="#e8eefc" stroke-opacity="0.55"/><text x="512.0" y="412" font-family="'JetBrains Mono','SFMono-Regular',Consolas,monospace" font-size="12" fill="#e8eefc" text-anchor="middle">Next.js 15</text><rect x="579.0" y="392" width="98" height="30" rx="15" fill="#f59e0b" fill-opacity="0.10" stroke="#f59e0b" stroke-opacity="0.55"/><text x="628.0" y="412" font-family="'JetBrains Mono','SFMono-Regular',Consolas,monospace" font-size="12" fill="#f59e0b" text-anchor="middle">Groq LPU</text><rect x="687.0" y="392" width="98" height="30" rx="15" fill="#10b981" fill-opacity="0.10" stroke="#10b981" stroke-opacity="0.55"/><text x="736.0" y="412" font-family="'JetBrains Mono','SFMono-Regular',Consolas,monospace" font-size="12" fill="#10b981" text-anchor="middle">Pinecone</text><rect x="795.0" y="392" width="130" height="30" rx="15" fill="#a855f7" fill-opacity="0.10" stroke="#a855f7" stroke-opacity="0.55"/><text x="860.0" y="412" font-family="'JetBrains Mono','SFMono-Regular',Consolas,monospace" font-size="12" fill="#a855f7" text-anchor="middle">MiniLM 384-d</text>
+</svg>

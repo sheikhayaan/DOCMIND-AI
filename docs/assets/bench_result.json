@@ -1,0 +1,78 @@
+{
+ "doc": "089f70e7-5bfa-4028-bcba-8b550f055150",
+ "ingest_s": 2.2,
+ "chunks": 12,
+ "pages": 12,
+ "runs": [
+  {
+   "label": "page",
+   "q": "what is written on page 5",
+   "ms": 1925,
+   "conf": "high",
+   "src": "document"
+  },
+  {
+   "label": "page-oob",
+   "q": "what is written on page 99",
+   "ms": 1965,
+   "conf": "medium",
+   "src": "document"
+  },
+  {
+   "label": "metadata",
+   "q": "how many pages are there in this pdf",
+   "ms": 50,
+   "conf": "high",
+   "src": "document"
+  },
+  {
+   "label": "overview",
+   "q": "what is this about",
+   "ms": 3083,
+   "conf": "high",
+   "src": "document"
+  },
+  {
+   "label": "followup",
+   "q": "more about pdf in short",
+   "ms": 3014,
+   "conf": "high",
+   "src": "document"
+  },
+  {
+   "label": "grounded",
+   "q": "Tell me about the budget in the document",
+   "ms": 1847,
+   "conf": "high",
+   "src": "document"
+  },
+  {
+   "label": "general",
+   "q": "what is the PDF file format",
+   "ms": 2757,
+   "conf": "high",
+   "src": "general"
+  },
+  {
+   "label": "general2",
+   "q": "Summarize the TLS handshake",
+   "ms": 2486,
+   "conf": "high",
+   "src": "general"
+  },
+  {
+   "label": "nonsense",
+   "q": "asdfgh",
+   "ms": 51,
+   "conf": "low",
+   "src": "assistant"
+  },
+  {
+   "label": "page",
+   "q": "what does page 2 say",
+   "ms": 3446,
+   "conf": "high",
+   "src": "document"
+  }
+ ]
+}
