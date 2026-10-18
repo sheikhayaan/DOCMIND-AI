@@ -1,0 +1,155 @@
+name: docmind
+
+x-backend-environment: &backend-environment
+  ENVIRONMENT: ${ENVIRONMENT:-production}
+  QUEUE_BACKEND: celery
+  REDIS_URL: redis://redis:6379/0
+  INGESTION_QUEUE_NAME: docmind
+  CLAMAV_HOST: clamav
+  CLAMAV_PORT: "3310"
+  CLAMAV_REQUIRED: "true"
+  CLAMAV_TIMEOUT_SECONDS: "30"
+  DOCMIND_DATA_DIR: /app/.data
+  DOCMIND_STAGING_DIR: /app/.data/staging
+  SECURITY_DB_PATH: /app/.data/security.sqlite3
+  CSP_CONNECT_SRC: ${CSP_CONNECT_SRC:-http://localhost:8000}
+  FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    restart: unless-stopped
+    networks: [internal]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 320M
+
+  clamav:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    networks: [internal]
+    volumes:
+      - clamav-db:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 15s
+      start_period: 180s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+
+  backend-api:
+    build:
+      context: ./backend
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment: *backend-environment
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    networks: [edge, internal]
+    volumes:
+      - docmind-data:/app/.data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 45s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+
+  celery-worker:
+    build:
+      context: ./backend
+    command: ["celery", "-A", "celery_app", "worker", "--loglevel=INFO", "--concurrency=2", "--queues=docmind", "--time-limit=900", "--soft-time-limit=840"]
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment: *backend-environment
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+    networks: [internal]
+    volumes:
+      - docmind-data:/app/.data
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A celery_app inspect ping --timeout 5 | grep -q pong"]
+      interval: 30s
+      timeout: 10s
+      start_period: 45s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2.5G
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_RECAPTCHA_SITE_KEY: ${NEXT_PUBLIC_RECAPTCHA_SITE_KEY:-}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+    restart: unless-stopped
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    networks: [edge]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/login >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+networks:
+  edge:
+  internal:
+    internal: true
+
+volumes:
+  docmind-data:
+  redis-data:
+  clamav-db:

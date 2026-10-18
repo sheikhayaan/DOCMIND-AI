@@ -16,3 +16,10 @@ frontend/.next/
 # General
 .DS_Store
 *.log
+# Local security database and staged uploads (contains PII)
+backend/*.sqlite3
+backend/.data/
+*.sqlite3
+
+# Local editor / agent settings
+.claude/
