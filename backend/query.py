@@ -1018,7 +1018,14 @@ def answer_question(
 
         embeddings = get_embeddings()
         question_embedding = embeddings.embed_query(rewritten_query)
-        vector_store = PineconeVectorStore(index_name=index_name, embedding=embeddings)
+        # Constructing the store reaches Pinecone eagerly, so a bad key or an
+        # offline environment would abort the whole query here. Degrade to the
+        # in-process chunk cache instead: a grounded answer is still possible.
+        try:
+            vector_store = PineconeVectorStore(index_name=index_name, embedding=embeddings)
+        except Exception as exc:  # noqa: BLE001 - provider errors vary by SDK version
+            print(f"Warning: vector store unavailable ({exc}); using local chunks")
+            vector_store = None
 
         # "What is written on page 7" must read page 7, not rely on similarity
         # search: a meta-question has almost no lexical overlap with the page.
