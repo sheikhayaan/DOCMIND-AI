@@ -1,7 +1,21 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 
+import AuthGate from "@/components/AuthGate";
 import PageTransition from "@/components/PageTransition";
+import WebVitals from "@/components/WebVitals";
 import "./globals.css";
+
+// Nonce-based CSP requires per-request rendering: a prerendered shell cannot
+// carry the request nonce that middleware generates.
+export const dynamic = "force-dynamic";
+
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  preload: true,
+  variable: "--font-inter",
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
@@ -30,18 +44,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full bg-[#000000] antialiased">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html
+      lang="en"
+      className={`${inter.variable} h-full bg-[#000000] antialiased`}
+    >
       <body className="noise flex min-h-full flex-col bg-[#000000]">
-        <PageTransition>{children}</PageTransition>
+        <WebVitals />
+        <AuthGate>
+          <PageTransition>{children}</PageTransition>
+        </AuthGate>
       </body>
     </html>
   );

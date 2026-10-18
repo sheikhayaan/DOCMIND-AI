@@ -1,354 +1,178 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, Sun, Moon, FileText } from 'lucide-react';
+import AccountMenu from '@/components/AccountMenu';
 
-const LINKS = [
-  { label: 'Home', id: 'top' },
-  { label: 'Features', id: 'features' },
-  { label: 'Demo', id: 'demo' },
+// Navigation links for smooth scroll or cross-route navigation
+const NAV_LINKS = [
+  { label: 'Product', id: 'features' },
+  { label: 'How it works', id: 'how-it-works' },
+  { label: 'Technology', id: 'technology' },
 ];
 
-const LOGO = 'DocMind'.split('');
-
+// Main navigation component with scroll detection, mobile menu, and theme toggle
 export default function Navbar() {
-  const [active, setActive] = useState('top');
+  const pathname = usePathname();
+  const router = useRouter();
   const [scrolled, setScrolled] = useState(false);
-  const [outline, setOutline] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [dark, setDark] = useState(true);
 
+  // Detect scroll position to apply backdrop blur
   useEffect(() => {
-    const onScroll = () => {
-      setScrolled(window.scrollY > 100);
-      setOutline(window.scrollY > 300);
-    };
+    const onScroll = () => setScrolled(window.scrollY > 40);
     onScroll();
-    window.addEventListener('scroll', onScroll);
-
-    const sections = LINKS.map((l) => document.getElementById(l.id)).filter(
-      Boolean,
-    ) as HTMLElement[];
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) setActive(entry.target.id);
-        });
-      },
-      { rootMargin: '-40% 0px -50% 0px' },
-    );
-    sections.forEach((s) => observer.observe(s));
-
-    return () => {
-      window.removeEventListener('scroll', onScroll);
-      observer.disconnect();
-    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Lock body scroll while the mobile menu is open.
+  // Lock body scroll when mobile menu is open
   useEffect(() => {
     document.body.style.overflow = menuOpen ? 'hidden' : '';
-    return () => {
-      document.body.style.overflow = '';
-    };
+    return () => { document.body.style.overflow = ''; };
   }, [menuOpen]);
 
+  // Scrolls to a section or navigates to the homepage with a hash
   const scrollTo = (id: string) => {
     setMenuOpen(false);
-    if (id === 'top') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
+    if (pathname === '/') {
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      router.push(`/#${id}`);
     }
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  // Navigates to the home page top
+  const goHome = () => {
+    setMenuOpen(false);
+    if (pathname === '/') window.scrollTo({ top: 0, behavior: 'smooth' });
+    else router.push('/');
   };
 
   return (
     <>
       <motion.nav
-        className="nav-shell"
-        initial={{ opacity: 0, y: -16, x: '-50%' }}
-        animate={{ opacity: 1, y: 0, x: '-50%' }}
-        transition={{ duration: 0.6, ease: 'easeOut', delay: 0.1 }}
+        initial={{ y: -80, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
         style={{
           position: 'fixed',
-          top: '24px',
-          left: '50%',
-          zIndex: 50,
+          top: 0, left: 0, right: 0,
+          zIndex: 1000,
+          padding: '0 24px',
+          height: '64px',
           display: 'flex',
           alignItems: 'center',
-          gap: '8px',
-          padding: '8px',
-          paddingLeft: '24px',
-          background: 'rgba(255,255,255,0.04)',
-          backdropFilter: scrolled ? 'blur(40px) saturate(180%)' : 'blur(24px) saturate(180%)',
-          WebkitBackdropFilter: scrolled ? 'blur(40px) saturate(180%)' : 'blur(24px) saturate(180%)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          borderRadius: '999px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4), 0 0 60px rgba(99,102,241,0.08) inset',
-          transition: 'backdrop-filter 0.3s ease',
-          maxWidth: '92vw',
+          justifyContent: 'space-between',
+          transition: 'background 0.3s, border-color 0.3s, backdrop-filter 0.3s',
+          background: scrolled ? 'rgba(5,9,20,0.85)' : 'transparent',
+          backdropFilter: scrolled ? 'blur(20px)' : 'none',
+          WebkitBackdropFilter: scrolled ? 'blur(20px)' : 'none',
+          borderBottom: scrolled ? '1px solid rgba(255,255,255,0.06)' : '1px solid transparent',
         }}
       >
-        {/* Logo — each letter flips in on load */}
-        <div
-          className="nav-logo"
-          style={{
-            fontWeight: 800,
-            fontSize: '17px',
-            whiteSpace: 'nowrap',
-            marginRight: '8px',
-            cursor: 'pointer',
-            display: 'flex',
-            perspective: '600px',
-          }}
-          onClick={() => scrollTo('top')}
-        >
-          {LOGO.map((ch, i) => (
-            <motion.span
-              key={i}
-              initial={{ opacity: 0, rotateY: 90 }}
-              animate={{ opacity: 1, rotateY: 0 }}
-              transition={{ delay: 0.2 + i * 0.05, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-              style={{ color: '#ffffff', display: 'inline-block' }}
-            >
-              {ch}
-            </motion.span>
-          ))}
-          <motion.span
-            initial={{ opacity: 0, rotateY: 90 }}
-            animate={{ opacity: 1, rotateY: 0 }}
-            transition={{ delay: 0.2 + LOGO.length * 0.05, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-            className="gradient-text nav-logo-ai"
-            style={{ display: 'inline-block' }}
-          >
-            AI
-          </motion.span>
-        </div>
+        {/* Logo */}
+        <button onClick={goHome} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, #2563eb, #7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 16px rgba(37,99,235,0.5)' }}>
+            <FileText size={16} color="white" />
+          </div>
+          <div>
+            <span style={{ fontWeight: 800, fontSize: 16, color: '#fff', letterSpacing: '-0.02em' }}>DocMind</span>
+            <span style={{ fontWeight: 800, fontSize: 16, color: '#3b82f6', letterSpacing: '-0.02em' }}> AI</span>
+          </div>
+        </button>
 
-        {/* Links */}
-        <div style={{ display: 'flex', gap: '4px', position: 'relative' }} className="navbar-links">
-          {LINKS.map((link) => (
+        {/* Desktop nav links */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }} className="desktop-nav">
+          {NAV_LINKS.map((link) => (
             <button
               key={link.id}
               onClick={() => scrollTo(link.id)}
-              style={{
-                position: 'relative',
-                padding: '8px 16px',
-                fontSize: '14px',
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                color: active === link.id ? '#ffffff' : 'rgba(255,255,255,0.5)',
-                borderRadius: '999px',
-                transition: 'color 0.2s ease',
-                zIndex: 1,
-              }}
+              style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.65)', fontSize: 14, fontWeight: 500, cursor: 'pointer', transition: 'color 0.2s', padding: '4px 0' }}
+              onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.65)')}
             >
-              {active === link.id && (
-                <motion.div
-                  layoutId="navPill"
-                  transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    background: 'rgba(255,255,255,0.08)',
-                    borderRadius: '999px',
-                    zIndex: -1,
-                  }}
-                />
-              )}
               {link.label}
-              {active === link.id && (
-                <motion.div
-                  layoutId="navUnderline"
-                  transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-                  style={{
-                    position: 'absolute',
-                    left: '16px',
-                    right: '16px',
-                    bottom: '2px',
-                    height: '2px',
-                    borderRadius: '2px',
-                    background: 'linear-gradient(90deg, #6366f1, #a855f7, #ec4899)',
-                  }}
-                />
-              )}
             </button>
           ))}
+          <a href="https://github.com" target="_blank" rel="noreferrer" style={{ color: 'rgba(255,255,255,0.65)', fontSize: 14, fontWeight: 500, textDecoration: 'none', transition: 'color 0.2s' }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.65)')}>
+            GitHub
+          </a>
         </div>
 
-        {/* CTA — switches from filled to gradient-outline past 300px scroll */}
-        <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
-          className={outline ? 'nav-cta-outline' : 'glow-btn'}
-          onClick={() => scrollTo('demo')}
-          style={{
-            padding: '12px 28px',
-            borderRadius: '999px',
-            fontSize: '14px',
-            fontWeight: 600,
-            whiteSpace: 'nowrap',
-            transition: 'background 0.4s ease, box-shadow 0.4s ease, color 0.4s ease',
-          }}
-        >
-          Get Started
-        </motion.button>
-
-        {/* Hamburger (mobile only) */}
-        <button
-          className="nav-hamburger"
-          aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-          onClick={() => setMenuOpen((v) => !v)}
-          style={{
-            display: 'none',
-            width: '40px',
-            height: '40px',
-            borderRadius: '999px',
-            border: 'none',
-            background: 'rgba(255,255,255,0.06)',
-            color: '#fff',
-            cursor: 'pointer',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <motion.span
-            initial={false}
-            animate={{ rotate: menuOpen ? 90 : 0 }}
-            transition={{ duration: 0.25 }}
-            style={{ display: 'inline-flex' }}
+        {/* Right side actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* Theme toggle */}
+          <button
+            onClick={() => setDark(!dark)}
+            className="nav-theme"
+            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.55)', cursor: 'pointer', padding: '6px', borderRadius: '8px', transition: 'color 0.2s, background 0.2s', display: 'flex' }}
+            onMouseEnter={e => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.55)'; e.currentTarget.style.background = 'transparent'; }}
           >
-            {menuOpen ? <X size={20} /> : <Menu size={20} />}
-          </motion.span>
-        </button>
+            {dark ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
 
-        <style jsx>{`
-          .nav-shell {
-            isolation: isolate;
-            overflow: hidden;
-          }
-          .nav-shell::before {
-            position: absolute;
-            z-index: -1;
-            inset: 0;
-            background: linear-gradient(110deg, transparent 15%, rgba(255, 255, 255, 0.055) 45%, transparent 72%);
-            content: '';
-            transform: translateX(-120%);
-            animation: nav-sheen 8s ease-in-out infinite;
-            pointer-events: none;
-          }
-          .nav-logo {
-            position: relative;
-          }
-          .nav-logo-ai {
-            text-shadow: 0 0 12px rgba(168, 85, 247, 0.6);
-          }
-          .nav-cta-outline {
-            position: relative;
-            background: rgba(8, 8, 16, 0.6);
-            color: #fff;
-            border: 1px solid transparent;
-            background-image: linear-gradient(rgba(8, 8, 16, 0.6), rgba(8, 8, 16, 0.6)),
-              linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
-            background-origin: border-box;
-            background-clip: padding-box, border-box;
-            cursor: pointer;
-          }
-          .nav-cta-outline:hover {
-            box-shadow: 0 0 24px rgba(168, 85, 247, 0.35);
-          }
-          @keyframes nav-sheen {
-            0%,
-            68% {
-              transform: translateX(-120%);
-            }
-            88%,
-            100% {
-              transform: translateX(120%);
-            }
-          }
-          @media (max-width: 768px) {
-            .navbar-links {
-              display: none !important;
-            }
-            :global(.nav-shell) .nav-cta-outline,
-            :global(.nav-shell) .glow-btn {
-              display: none !important;
-            }
-            .nav-hamburger {
-              display: flex !important;
-            }
-          }
-          @media (prefers-reduced-motion: reduce) {
-            .nav-shell::before {
-              animation: none;
-            }
-          }
-        `}</style>
+          {/* Profile avatar once signed in; a Sign in CTA for anonymous visitors. */}
+          <AccountMenu />
+
+          {/* Open DocMind CTA */}
+          <button
+            onClick={goHome}
+            className="glow-btn desktop-nav"
+            style={{ padding: '9px 20px', borderRadius: '10px', fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            Open DocMind →
+          </button>
+
+          {/* Mobile hamburger */}
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            style={{ display: 'none', background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '6px' }}
+            className="mobile-menu-btn"
+          >
+            {menuOpen ? <X size={22} /> : <Menu size={22} />}
+          </button>
+        </div>
       </motion.nav>
 
-      {/* Full-screen mobile menu */}
+      {/* Mobile menu */}
       <AnimatePresence>
         {menuOpen && (
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 49,
-              background: 'rgba(0,0,0,0.95)',
-              backdropFilter: 'blur(40px)',
-              WebkitBackdropFilter: 'blur(40px)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '28px',
-              padding: '120px 24px 48px',
-            }}
+            transition={{ duration: 0.25 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(5,9,20,0.97)', backdropFilter: 'blur(20px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '28px', padding: '80px 24px 40px' }}
           >
-            {LINKS.map((link, i) => (
-              <motion.button
-                key={link.id}
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.08 + i * 0.08 }}
-                onClick={() => scrollTo(link.id)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: active === link.id ? '#fff' : 'rgba(255,255,255,0.6)',
-                  fontSize: '32px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
+            {NAV_LINKS.map((link) => (
+              <button key={link.id} onClick={() => scrollTo(link.id)} style={{ background: 'none', border: 'none', color: '#fff', fontSize: 24, fontWeight: 700, cursor: 'pointer' }}>
                 {link.label}
-              </motion.button>
+              </button>
             ))}
-            <motion.button
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.08 + LINKS.length * 0.08 }}
-              className="glow-btn"
-              onClick={() => scrollTo('demo')}
-              style={{
-                marginTop: '16px',
-                padding: '18px 56px',
-                borderRadius: '999px',
-                fontSize: '18px',
-                fontWeight: 700,
-              }}
-            >
-              Get Started
-            </motion.button>
+            <button onClick={() => { setMenuOpen(false); goHome(); }} className="glow-btn" style={{ padding: '14px 32px', borderRadius: '12px', fontSize: 16, fontWeight: 700, marginTop: 8 }}>
+              Open DocMind →
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
+
+      <style>{`
+        @media (max-width: 768px) {
+          .desktop-nav { display: none !important; }
+          .mobile-menu-btn { display: flex !important; }
+        }
+        /* Keep the profile control and hamburger on one line on narrow phones. */
+        @media (max-width: 420px) {
+          .nav-theme { display: none !important; }
+        }
+      `}</style>
     </>
   );
 }

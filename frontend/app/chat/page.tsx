@@ -1,6 +1,6 @@
 'use client';
-import { useState, useRef, useEffect, Fragment, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useState, useRef, useEffect, useCallback, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowUp,
@@ -12,11 +12,25 @@ import {
   AlertTriangle,
   Info,
   Sparkles,
+  Trash2,
+  Globe,
+  History,
+  MessageSquare,
+  Plus,
+  X,
   type LucideIcon,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Navbar from '@/components/Navbar';
+import StructuredAnswer from '@/components/StructuredAnswer';
 import { queryDocument, getSuggestions, type ChatHistoryMessage } from '@/lib/api';
+import {
+  chatStorageKey,
+  listConversations,
+  deleteConversation,
+  formatConversationTime,
+  type StoredConversation,
+} from '@/lib/chat-history';
 
 const ParticleBackground = dynamic(() => import('@/components/ParticleBackground'), {
   ssr: false,
@@ -32,8 +46,17 @@ interface Message {
   content: string;
   sources?: Source[];
   confidence?: string;
+  answerSource?: 'document' | 'general' | 'assistant';
   time: string;
+  // Transient: only a freshly received answer animates in. Restored history
+  // renders instantly so reopening a chat is not a replay.
+  animate?: boolean;
 }
+
+// Chat transcripts persist per document so a reload or a later visit keeps the
+// conversation. Bump the version suffix if the stored shape ever changes.
+const MAX_STORED_MESSAGES = 60;
+const MAX_STORED_SOURCE_CHARS = 300;
 
 const CAPABILITIES = [
   '📄 Find information',
@@ -78,44 +101,6 @@ const CONFIDENCE_STYLES: Record<
     Icon: AlertTriangle,
   },
 };
-
-// Render **bold** segments inside AI text
-function parseMarkdown(text: string) {
-  const parts = text.split(/(\*\*.*?\*\*)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return (
-        <strong key={i} style={{ color: '#ffffff', fontWeight: 700 }}>
-          {part.slice(2, -2)}
-        </strong>
-      );
-    }
-    return <Fragment key={i}>{part}</Fragment>;
-  });
-}
-
-// AI answer rendered word-by-word so a completed response still "types" in.
-function AnimatedAnswer({ text }: { text: string }) {
-  const words = text.split(/(\s+)/); // keep whitespace tokens
-  return (
-    <span style={{ whiteSpace: 'pre-wrap' }}>
-      {words.map((w, i) => {
-        if (/^\s+$/.test(w)) return <Fragment key={i}>{w}</Fragment>;
-        return (
-          <motion.span
-            key={i}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.015, duration: 0.2 }}
-            style={{ display: 'inline-block' }}
-          >
-            {parseMarkdown(w)}
-          </motion.span>
-        );
-      })}
-    </span>
-  );
-}
 
 // Source chip that expands downward to reveal snippet text on hover.
 function SourceChip({ source, delay }: { source: Source; delay: number }) {
@@ -187,6 +172,7 @@ function ChatFallback() {
 
 function ChatContent() {
   const params = useSearchParams();
+  const router = useRouter();
   const docId = params.get('docId') || '';
   const filename = params.get('filename') || 'Document';
   const docType = params.get('docType') || 'general';
@@ -199,6 +185,12 @@ function ChatContent() {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [focused, setFocused] = useState(false);
+  // Guards the save effect so it cannot overwrite stored history with the empty
+  // initial state before the restore effect has run.
+  const [hydrated, setHydrated] = useState(false);
+  // Separate history panel: lists every saved conversation in this browser.
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [conversations, setConversations] = useState<StoredConversation[]>([]);
   const [isMac] = useState(
     () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform),
   );
@@ -207,20 +199,89 @@ function ChatContent() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Fetch suggested questions on mount
-  useEffect(() => {
-    let active = true;
+  const loadSuggestions = useCallback(() => {
     getSuggestions(docId, docType)
-      .then((res) => {
-        if (active) setSuggestions(res.length ? res : null);
-      })
-      .catch(() => {
-        if (active) setSuggestions(null);
-      });
-    return () => {
-      active = false;
-    };
+      .then((res) => setSuggestions(res.length ? res : null))
+      .catch(() => setSuggestions(null));
   }, [docId, docType]);
+
+  // Restore this document's saved transcript, then fetch suggestions only when
+  // there is nothing to restore.
+  useEffect(() => {
+    setHydrated(false);
+    let restoredCount = 0;
+
+    try {
+      const raw = window.localStorage.getItem(chatStorageKey(docId));
+      if (raw) {
+        const saved = JSON.parse(raw) as {
+          messages?: Message[];
+          history?: ChatHistoryMessage[];
+        };
+        if (Array.isArray(saved.messages) && saved.messages.length) {
+          setMessages(saved.messages.map((msg) => ({ ...msg, animate: false })));
+          setHistory(Array.isArray(saved.history) ? saved.history : []);
+          restoredCount = saved.messages.length;
+        }
+      }
+    } catch {
+      // Corrupt or unreadable entry: fall through and start a clean chat.
+    }
+
+    if (!restoredCount) {
+      setMessages([]);
+      setHistory([]);
+      loadSuggestions();
+    } else {
+      setSuggestions(null);
+    }
+    setHydrated(true);
+  }, [docId, loadSuggestions]);
+
+  // Persist the transcript whenever it changes. Best effort: private mode and
+  // quota errors must never break the chat.
+  useEffect(() => {
+    if (!hydrated) return;
+    const key = chatStorageKey(docId);
+    try {
+      if (!messages.length) {
+        window.localStorage.removeItem(key);
+        return;
+      }
+      const trimmed = messages.slice(-MAX_STORED_MESSAGES).map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+        confidence: msg.confidence,
+        time: msg.time,
+        sources: msg.sources?.map((source) => ({
+          page: source.page,
+          text: source.text.slice(0, MAX_STORED_SOURCE_CHARS),
+        })),
+      }));
+      window.localStorage.setItem(
+        key,
+        JSON.stringify({
+          messages: trimmed,
+          history: history.slice(-16),
+          filename: decodeURIComponent(filename),
+          docType,
+          updatedAt: Date.now(),
+        }),
+      );
+    } catch {
+      // Storage unavailable or full — the in-memory chat still works.
+    }
+  }, [messages, history, hydrated, docId, filename, docType]);
+
+  // Re-reads the saved conversation list so the panel always shows fresh data.
+  const refreshConversations = useCallback(() => {
+    setConversations(listConversations());
+  }, []);
+
+  // Keeps the panel contents current whenever a transcript is saved.
+  useEffect(() => {
+    if (hydrated) refreshConversations();
+  }, [messages, hydrated, refreshConversations]);
 
   // Auto scroll to bottom on new message
   useEffect(() => {
@@ -264,7 +325,9 @@ function ChatContent() {
         content: res.answer,
         sources: res.sources,
         confidence: res.confidence,
+        answerSource: res.answer_source,
         time: timeNow(),
+        animate: true,
       };
       setMessages((prev) => [...prev, aiMsg]);
       setHistory((prev) => [
@@ -272,18 +335,52 @@ function ChatContent() {
         { role: 'user', content: trimmed },
         { role: 'assistant', content: res.answer },
       ]);
-    } catch {
+    } catch (queryError) {
       setMessages((prev) => [
         ...prev,
         {
           role: 'ai',
-          content: 'Something went wrong reaching the server. Please try again.',
+          content:
+            queryError instanceof Error
+              ? queryError.message
+              : 'Something went wrong reaching the server. Please try again.',
           confidence: 'low',
           time: timeNow(),
+          animate: true,
         },
       ]);
     }
     setLoading(false);
+  };
+
+  // Discards this document's transcript, in memory and in storage.
+  const clearChat = () => {
+    setMessages([]);
+    setHistory([]);
+    deleteConversation(docId);
+    refreshConversations();
+    loadSuggestions();
+  };
+
+  // Deletes one saved conversation from the list without leaving the panel.
+  const removeConversation = (targetDocId: string) => {
+    deleteConversation(targetDocId);
+    if (targetDocId === docId) {
+      setMessages([]);
+      setHistory([]);
+      loadSuggestions();
+    }
+    refreshConversations();
+  };
+
+  // Opens a saved conversation by navigating to its document chat.
+  const openConversation = (conversation: StoredConversation) => {
+    setHistoryOpen(false);
+    router.push(
+      `/chat?docId=${encodeURIComponent(conversation.docId)}` +
+        `&filename=${encodeURIComponent(conversation.filename)}` +
+        `&docType=${encodeURIComponent(conversation.docType)}`,
+    );
   };
 
   const copyMessage = (text: string, index: number) => {
@@ -300,9 +397,50 @@ function ChatContent() {
   const typeStyle = TYPE_STYLES[docType] || TYPE_STYLES.general;
   const charCount = input.length;
 
+  // Track PDF panel visibility
+  const [pdfOpen, setPdfOpen] = useState(true);
+
+  // Build the blob URL for the uploaded file stored in sessionStorage
+  const pdfUrl = typeof window !== 'undefined'
+    ? (sessionStorage.getItem(`pdf_url_${docId}`) ?? null)
+    : null;
+
   return (
-    <div style={{ height: '100vh', overflow: 'hidden', position: 'relative', background: '#000' }}>
+    <div style={{ height: '100vh', overflow: 'hidden', position: 'relative', background: 'var(--bg-primary)', display: 'flex' }}>
       <ParticleBackground />
+
+      {/* PDF Preview Panel */}
+      {pdfUrl && (
+        <motion.div
+          initial={{ width: 0, opacity: 0 }}
+          animate={{ width: pdfOpen ? 340 : 0, opacity: pdfOpen ? 1 : 0 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 35 }}
+          style={{ flexShrink: 0, height: '100vh', overflow: 'hidden', borderRight: '1px solid rgba(255,255,255,0.07)', background: 'rgba(8,13,26,0.95)', zIndex: 10, position: 'relative' }}
+        >
+          <div style={{ width: 340, height: '100%', display: 'flex', flexDirection: 'column' }}>
+            {/* PDF header */}
+            <div style={{ padding: '72px 16px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FileText size={14} color="#3b82f6" />
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>
+                  {decodeURIComponent(filename)}
+                </span>
+              </div>
+              <button onClick={() => setPdfOpen(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '2px 6px', borderRadius: 6 }}>×</button>
+            </div>
+            {/* PDF iframe */}
+            <iframe
+              src={pdfUrl}
+              title="PDF Preview"
+              className="pdf-iframe"
+              style={{ flex: 1 }}
+            />
+          </div>
+        </motion.div>
+      )}
+
+      {/* Main chat area */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
       <Navbar />
 
       {/* Subtle depth glow from the top */}
@@ -314,7 +452,7 @@ function ChatContent() {
           zIndex: 0,
           pointerEvents: 'none',
           background:
-            'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(99,102,241,0.04) 0%, transparent 70%)',
+            'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(37,99,235,0.04) 0%, transparent 70%)',
         }}
       />
 
@@ -353,7 +491,51 @@ function ChatContent() {
             flexShrink: 0,
           }}
         />
-        <FileText size={18} color="#6366f1" style={{ flexShrink: 0 }} />
+        {/* Separate history entry point */}
+        <button
+          type="button"
+          onClick={() => {
+            refreshConversations();
+            setHistoryOpen(true);
+          }}
+          title="Open saved chat history"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            flexShrink: 0,
+            padding: '5px 12px',
+            borderRadius: '999px',
+            border: '1px solid rgba(96,165,250,0.35)',
+            background: 'rgba(37,99,235,0.12)',
+            color: '#60a5fa',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          <History size={12} />
+          History
+          {conversations.length > 0 && (
+            <span
+              style={{
+                background: 'rgba(96,165,250,0.25)',
+                borderRadius: '999px',
+                padding: '0 6px',
+                fontSize: '11px',
+              }}
+            >
+              {conversations.length}
+            </span>
+          )}
+        </button>
+        {/* PDF preview toggle */}
+        {pdfUrl && !pdfOpen && (
+          <button onClick={() => setPdfOpen(true)} style={{ background: 'rgba(37,99,235,0.12)', border: '1px solid rgba(37,99,235,0.25)', color: '#60a5fa', borderRadius: 8, padding: '3px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <FileText size={11} /> PDF
+          </button>
+        )}
+        <FileText size={18} color="#3b82f6" style={{ flexShrink: 0 }} />
         <span
           style={{
             color: '#fff',
@@ -382,7 +564,227 @@ function ChatContent() {
         >
           {docType}
         </span>
+        {messages.length > 0 && (
+          <button
+            type="button"
+            onClick={clearChat}
+            title="Clear saved conversation"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              flexShrink: 0,
+              padding: '5px 12px',
+              borderRadius: '999px',
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'transparent',
+              color: 'rgba(255,255,255,0.5)',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            <Trash2 size={12} />
+            Clear
+          </button>
+        )}
       </motion.div>
+
+      {/* Saved chats panel — the separate history option */}
+      <AnimatePresence>
+        {historyOpen && (
+          <motion.div
+            key="history-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setHistoryOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.6)',
+              backdropFilter: 'blur(4px)',
+              zIndex: 60,
+            }}
+          >
+            <motion.aside
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'tween', duration: 0.22 }}
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: 'min(400px, 100vw)',
+                background: '#0b1220',
+                borderLeft: '1px solid rgba(255,255,255,0.1)',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '18px 18px 14px',
+                  borderBottom: '1px solid rgba(255,255,255,0.08)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', fontWeight: 700, fontSize: 15 }}>
+                  <History size={16} color="#60a5fa" /> Chat history
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearChat();
+                      setHistoryOpen(false);
+                    }}
+                    title="Start a new chat for this document"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      padding: '5px 10px',
+                      borderRadius: 8,
+                      border: '1px solid rgba(96,165,250,0.35)',
+                      background: 'rgba(37,99,235,0.15)',
+                      color: '#60a5fa',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Plus size={12} /> New chat
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHistoryOpen(false)}
+                    aria-label="Close history"
+                    style={{
+                      display: 'inline-flex',
+                      padding: 6,
+                      borderRadius: 8,
+                      border: 'none',
+                      background: 'rgba(255,255,255,0.06)',
+                      color: 'rgba(255,255,255,0.7)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                {conversations.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '48px 20px', color: 'rgba(255,255,255,0.45)' }}>
+                    <MessageSquare size={28} style={{ margin: '0 auto 12px', opacity: 0.6 }} />
+                    <p style={{ fontSize: 14, margin: 0 }}>No saved chats yet.</p>
+                    <p style={{ fontSize: 12, margin: '6px 0 0', opacity: 0.7 }}>
+                      Ask a question and it will appear here.
+                    </p>
+                  </div>
+                ) : (
+                  conversations.map((conversation) => {
+                    const isCurrent = conversation.docId === docId;
+                    return (
+                      <div
+                        key={conversation.docId}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => openConversation(conversation)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') openConversation(conversation);
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: 10,
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '12px',
+                          marginBottom: 8,
+                          borderRadius: 12,
+                          cursor: 'pointer',
+                          border: isCurrent
+                            ? '1px solid rgba(96,165,250,0.45)'
+                            : '1px solid rgba(255,255,255,0.08)',
+                          background: isCurrent ? 'rgba(37,99,235,0.12)' : 'rgba(255,255,255,0.03)',
+                        }}
+                      >
+                        <MessageSquare size={15} color="#60a5fa" style={{ marginTop: 2, flexShrink: 0 }} />
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div
+                            style={{
+                              color: '#fff',
+                              fontSize: 13,
+                              fontWeight: 600,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {conversation.filename}
+                            {isCurrent && (
+                              <span style={{ marginLeft: 6, fontSize: 10, color: '#60a5fa', fontWeight: 700 }}>
+                                CURRENT
+                              </span>
+                            )}
+                          </div>
+                          {conversation.preview && (
+                            <div
+                              style={{
+                                color: 'rgba(255,255,255,0.5)',
+                                fontSize: 12,
+                                marginTop: 3,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {conversation.preview}
+                            </div>
+                          )}
+                          <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 5 }}>
+                            {conversation.messageCount} messages
+                            {conversation.updatedAt
+                              ? ` · ${formatConversationTime(conversation.updatedAt)}`
+                              : ''}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          aria-label={`Delete chat for ${conversation.filename}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            removeConversation(conversation.docId);
+                          }}
+                          style={{
+                            flexShrink: 0,
+                            padding: 6,
+                            borderRadius: 8,
+                            border: 'none',
+                            background: 'transparent',
+                            color: 'rgba(255,255,255,0.35)',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </motion.aside>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Messages */}
       <div
@@ -517,7 +919,10 @@ function ChatContent() {
           <AnimatePresence initial={false}>
             {messages.map((msg, i) => {
               const conf = msg.confidence ? CONFIDENCE_STYLES[msg.confidence] : null;
-              const isLastAi = msg.role === 'ai' && i === messages.length - 1;
+              // General-knowledge answers are clearly labelled instead of being
+              // scored against the document they deliberately did not use.
+              const isGeneral = msg.answerSource === 'general';
+              const showConfidence = Boolean(conf) && !isGeneral;
               return (
                 <motion.div
                   key={i}
@@ -573,11 +978,7 @@ function ChatContent() {
                         boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
                       }}
                     >
-                      {isLastAi ? (
-                        <AnimatedAnswer text={msg.content} />
-                      ) : (
-                        <span style={{ whiteSpace: 'pre-wrap' }}>{parseMarkdown(msg.content)}</span>
-                      )}
+                      <StructuredAnswer text={msg.content} animate={msg.animate} />
                       <button
                         onClick={() => copyMessage(msg.content, i)}
                         className="copy-btn"
@@ -605,12 +1006,29 @@ function ChatContent() {
                   )}
 
                   {/* Sources + confidence */}
-                  {msg.role === 'ai' && (msg.sources?.length || conf) && (
+                  {msg.role === 'ai' && (msg.sources?.length || conf || isGeneral) && (
                     <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', paddingLeft: '4px', alignItems: 'flex-start' }}>
                       {msg.sources?.map((s, j) => (
                         <SourceChip key={j} source={s} delay={0.1 + j * 0.1} />
                       ))}
-                      {conf && (
+                      {isGeneral && (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            background: 'rgba(99,102,241,0.12)',
+                            border: '1px solid rgba(99,102,241,0.3)',
+                            borderRadius: '999px',
+                            padding: '6px 18px',
+                            color: '#a5b4fc',
+                            fontSize: '14px',
+                          }}
+                        >
+                          <Globe size={14} /> General knowledge
+                        </span>
+                      )}
+                      {showConfidence && conf && (
                         <motion.span
                           initial={{ opacity: 0 }}
                           animate={
@@ -901,6 +1319,7 @@ function ChatContent() {
           }
         }
       `}</style>
+    </div>
     </div>
   );
 }
