@@ -10,6 +10,9 @@ import pytest
 from query import (
     classify_confidence,
     cosine_similarity,
+    is_document_overview,
+    is_probably_gibberish,
+    is_pure_general_answer,
     keyword_search,
     reciprocal_rank_fusion,
     sanitize_history,
@@ -172,7 +175,8 @@ def test_score_relevance_uses_pinecone_similarity_score():
         FakeChunk("text", {"_similarity_score": 0.8}),
         FakeChunk("text", {"_similarity_score": 0.4}),
     ]
-    assert score_relevance("anything", chunks) == pytest.approx(0.6)
+    # Top-weighted blend: 0.7 * best + 0.3 * mean, so strong evidence counts most.
+    assert score_relevance("anything", chunks) == pytest.approx(0.74)
 
 
 def test_score_relevance_word_overlap_fallback():
@@ -186,3 +190,228 @@ def test_score_relevance_prefers_embedding_cosine_when_present():
     q_emb = [1.0, 0.0]
     chunks = [FakeChunk("text", {"_question_embedding": q_emb, "embedding": [1.0, 0.0]})]
     assert score_relevance("anything", chunks) == pytest.approx(1.0)
+
+
+# --------------------------- document overview intent ---------------------------
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "what is this document about",
+        "What is this PDF about?",
+        "what's this about",
+        "summarize this document",
+        "Summarize this",
+        "give me a quick summary",
+        "give me an overview of the file",
+        "what are the main topics",
+        "tell me about this document",
+        "What does the document say?",
+    ],
+)
+def test_document_overview_questions_are_detected(question):
+    assert is_document_overview(question) is True
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What is the Project Atlas marketing budget?",
+        "Explain the TLS handshake in simple terms.",
+        "Summarize the TLS handshake",
+        "summarize the key differences between TCP and UDP",
+        "What does the report say about revenue?",
+        "Tell me about the budget in the document",
+        "Explain the main points of TLS",
+        "Who is the project lead?",
+        "What is the total revenue on page 3?",
+    ],
+)
+def test_specific_questions_are_not_treated_as_overviews(question):
+    assert is_document_overview(question) is False
+
+
+# ----------------------- answer-source labelling -----------------------
+
+def test_pure_general_answer_is_detected():
+    answer = "## General knowledge\n_Not from the uploaded document._\nThe TLS handshake..."
+    assert is_pure_general_answer(answer) is True
+
+
+def test_grounded_answer_is_not_labelled_general():
+    answer = "The budget is $4.2 million (p. 3).\n**Bottom line:** shipped."
+    assert is_pure_general_answer(answer) is False
+
+
+def test_mixed_answer_keeps_document_sources():
+    answer = (
+        "The document covers TLS 1.2 (p. 4).\n"
+        "## General knowledge\n_Not from the uploaded document._\nTLS 1.3 is newer."
+    )
+    assert is_pure_general_answer(answer) is False
+
+
+# ---------------------------- gibberish guard ----------------------------
+
+@pytest.mark.parametrize("text", ["asdfgh", "qwerty", "zzzzzzzz", "sdfgsdfg"])
+def test_keyboard_mash_is_flagged_as_gibberish(text):
+    assert is_probably_gibberish(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "What is the budget?",
+        "TLS",
+        "GDPR compliance",
+        "Tell me about Project Aurora",
+        "summarize this document",
+    ],
+)
+def test_real_questions_are_not_flagged_as_gibberish(text):
+    assert is_probably_gibberish(text) is False
+
+
+# ----------------------- page and metadata routing -----------------------
+
+from query import (  # noqa: E402 - grouped with the page/metadata tests below
+    collect_page_chunks,
+    extract_page_numbers,
+    generate_metadata_answer,
+    is_document_deictic,
+    is_document_follow_up,
+    is_file_metadata_question,
+    is_page_count_question,
+    sanitize_page_citations,
+)
+
+
+@pytest.mark.parametrize(
+    "question,expected",
+    [
+        ("what is written on page 7", [7]),
+        ("summarize pages 2 to 4", [2, 3, 4]),
+        ("show p. 3", [3]),
+        ("page number 12", [12]),
+        ("what is on pages 5-6", [5, 6]),
+        ("explain page 10 and page 11", [10, 11]),
+        ("what is this about", []),
+        ("how many pages are there in this pdf", []),
+    ],
+)
+def test_extract_page_numbers(question, expected):
+    assert extract_page_numbers(question) == expected
+
+
+@pytest.mark.parametrize(
+    "question,expected",
+    [
+        ("how many pages are there in this pdf", True),
+        ("what is the page count?", True),
+        ("total pages in the document", True),
+        ("what is written on page 7", False),
+        ("summarize this document", False),
+    ],
+)
+def test_page_count_intent(question, expected):
+    assert is_page_count_question(question) is expected
+
+
+@pytest.mark.parametrize(
+    "question,expected",
+    [
+        ("what is the file name", True),
+        ("how big is this pdf", True),
+        ("when was this document uploaded", True),
+        ("what is written on page 7", False),
+    ],
+)
+def test_file_metadata_intent(question, expected):
+    assert is_file_metadata_question(question) is expected
+
+
+def test_vague_follow_up_needs_history_and_document_reference():
+    history = [{"role": "user", "content": "what is this about"}]
+    assert is_document_follow_up("more about pdf in short", history) is True
+    assert is_document_follow_up("more about pdf in short", None) is False
+    assert is_document_follow_up("what is the TLS handshake", history) is False
+
+
+def test_sanitize_page_citations_drops_retrieved_page_numbers_not_in_sources():
+    answer = "A (p. 2), B (p. 15), on page 4, on page 18."
+    cleaned = sanitize_page_citations(answer, {2, 4})
+    assert "(p. 2)" in cleaned
+    assert "(p. 15)" not in cleaned
+    assert "on page 4" in cleaned
+    assert "on page 18" not in cleaned
+
+
+def test_page_count_answer_uses_stored_metadata(monkeypatch):
+    monkeypatch.setattr(
+        "query.get_document_stats",
+        lambda doc_id, index_name: {
+            "filename": "guide.pdf",
+            "page_count": 19,
+            "chunk_count": 37,
+        },
+    )
+    monkeypatch.setattr(
+        "security.security_store.get_document_by_id",
+        lambda doc_id: {"filename": "guide.pdf", "file_size": 2048, "created_at": 0},
+    )
+    answer = generate_metadata_answer("how many pages are there", ["d1"], "idx")
+    assert "19 pages" in answer
+    assert "guide.pdf" in answer
+
+
+def test_collect_page_chunks_keeps_only_requested_page(monkeypatch):
+    import query
+
+    chunks = [
+        FakeChunk("page two text", {"doc_id": "d1", "page": 2, "chunk_index": 0}),
+        FakeChunk("page seven text", {"doc_id": "d1", "page": 7, "chunk_index": 0}),
+        FakeChunk("page eight text", {"doc_id": "d1", "page": 8, "chunk_index": 0}),
+    ]
+    monkeypatch.setitem(query.LOCAL_DOC_CHUNKS, "d1", chunks)
+    result = collect_page_chunks(["d1"], None, [0.0], [7])
+    assert [chunk.metadata["page"] for chunk in result] == [7]
+    assert result[0].page_content == "page seven text"
+
+
+@pytest.mark.parametrize(
+    "question,expected",
+    [
+        ("more about pdf in short", True),
+        ("tell me more about it", True),
+        ("summarize the document briefly", True),
+        ("what is the PDF file format", False),
+        ("history of the PDF format", False),
+        ("Summarize the TLS handshake", False),
+        ("what is a pdf", False),
+    ],
+)
+def test_deictic_document_reference(question, expected):
+    assert is_document_deictic(question) is expected
+
+
+def test_keyword_search_ignores_stopwords_when_ranking_evidence():
+    chunks = [
+        FakeChunk("Chapter 6 says the data in the split is the same", {"doc_id": "d1"}),
+        FakeChunk("PAGE FOUR BUDGET: the quarterly budget is four million dollars", {"doc_id": "d1"}),
+    ]
+    result = keyword_search("Tell me about the budget in the document", ["d1"], chunks, top_k=1)
+    assert len(result) == 1
+    assert "BUDGET" in result[0].page_content
+
+
+def test_page_citation_sanitizer_rejects_partially_retrieved_range():
+    text = "A claim (pp. 3-5) and another (p. 4)."
+    cleaned = sanitize_page_citations(text, {3, 5})
+    assert "pp. 3-5" not in cleaned
+    assert "(see sources)" in cleaned
+    assert "(p. 4)" not in cleaned
+
+
+def test_page_citation_sanitizer_keeps_fully_retrieved_range():
+    text = "A claim (pp. 3-5)."
+    assert sanitize_page_citations(text, {3, 4, 5}) == text

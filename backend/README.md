@@ -25,8 +25,28 @@ query ─▶ rewrite (LLaMA-8b) ─▶ vector search (k=8/doc)
 | `query.py` | Hybrid retrieval, RRF, confidence, answer generation |
 | `rerank.py` | Cross-encoder reranking of fused candidates (graceful fallback) |
 | `observability.py` | Per-query structured JSON tracing (latency, tokens, scores) |
+| `security.py` | Signed sessions, limits, audit logs, security headers, and admin metrics |
 | `evaluate.py` | LLM-as-judge eval harness (faithfulness / relevancy / precision) |
 | `models.py` | Pydantic request/response schemas |
+
+## Required production security environment
+
+Set these before deploying. The backend fails closed in production if the
+required secrets are missing.
+
+```bash
+ENVIRONMENT=production
+AUTH_SECRET=<long random secret>
+ADMIN_EMAIL=you@example.com
+ADMIN_ACCESS_TOKEN=<long random admin dashboard token>
+SECURITY_DB_PATH=/var/data/security.sqlite3
+```
+
+Usage limits are enforced server-side: 2 PDFs per signed user session, 2 upload
+attempts per IP per day, 4 questions per signed user, and 4 chat attempts per IP
+per day before any expensive LLM call. Admin metrics are available at `/admin`
+in the frontend and `/admin/metrics` in the backend only after signing in with
+the configured admin email and token.
 
 ## Running
 

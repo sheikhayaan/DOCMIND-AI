@@ -6,4 +6,5 @@ venv/
 .venv/
 *.db
 *.sqlite
-.pytest_cache/
+.pytest_cache/*.sqlite3
+.data/
