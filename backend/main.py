@@ -90,6 +90,9 @@ allowed_origins = [
     "https://docmind.ai",
     "https://www.docmind.ai",
     "https://docmind-ai.vercel.app",
+    "https://docmind-ai-dusky.vercel.app",
+    "https://docmind-ai-compiq.vercel.app",
+    "https://docmind-ai-git-main-compiq.vercel.app",
 ]
 production_origin = os.getenv("FRONTEND_URL") or os.getenv("VERCEL_URL")
 if production_origin:
@@ -112,8 +115,8 @@ app.add_middleware(
     allow_origins=list(dict.fromkeys(allowed_origins)),
     allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Session-ID", "X-Recaptcha-Token"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"],
+    allow_headers=["*"],
     expose_headers=[
         "X-RateLimit-Limit",
         "X-RateLimit-Remaining",
@@ -123,6 +126,24 @@ app.add_middleware(
     ],
     max_age=86400,
 )
+
+
+# Handles preflight OPTIONS requests for all endpoints with clean permissive CORS headers.
+@app.options("/{path:path}")
+async def options_handler(path: str, request: Request) -> Response:
+    """Answers preflight OPTIONS requests cleanly with permissive CORS headers."""
+    origin = request.headers.get("origin") or "https://docmind-ai-dusky.vercel.app"
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS, PUT, PATCH",
+            "Access-Control-Allow-Headers": request.headers.get("Access-Control-Request-Headers", "*"),
+            "Access-Control-Max-Age": "86400",
+            "Cross-Origin-Resource-Policy": "cross-origin",
+        },
+    )
 
 
 # Logs each request method, path, and response status code to the console.
