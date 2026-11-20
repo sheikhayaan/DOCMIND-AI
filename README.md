@@ -27,7 +27,7 @@ plainly that the document does not contain the answer.
 [![Redis](https://img.shields.io/badge/Redis%20%2B%20Celery-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io)
 [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=for-the-badge)](./LICENSE)
 
-[**Quickstart**](#-quickstart-in-90-seconds) · [**Architecture**](#-architecture) · [**How a question is answered**](#-how-a-question-is-answered) · [**Benchmarks**](#-measured-performance) · [**API**](#-api-reference) · [**Deploy**](#-deployment) · [**Troubleshooting**](#-troubleshooting)
+[**Quickstart**](#-quickstart-in-90-seconds) · [**Architecture**](#-architecture) · [**Admin Command Center**](./docs/admin-command-center.md) · [**How a question is answered**](#-how-a-question-is-answered) · [**Benchmarks**](#-measured-performance) · [**API**](#-api-reference) · [**Deploy**](#-deployment) · [**Troubleshooting**](#-troubleshooting)
 
 </div>
 
@@ -43,6 +43,7 @@ plainly that the document does not contain the answer.
 | [Why DocMind exists](#-why-docmind-exists) | The three failure modes this project was built to kill |
 | [Feature matrix](#-feature-matrix) | Every capability, and whether it is shipped |
 | [Architecture](#-architecture) | Layered diagram + live request trace |
+| [Admin Command Center & autonomous APM](./docs/admin-command-center.md) | Live telemetry, verified self-healing, real reviews, admin API, mobile safety, and operations guide |
 | [How a question is answered](#-how-a-question-is-answered) | Intent routing, retrieval, citation audit |
 | [Ingestion pipeline](#-ingestion-pipeline) | Upload → ready, with state machine |
 | [Data model](#-data-model) | ER diagram of users, documents, sessions |

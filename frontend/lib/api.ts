@@ -144,6 +144,7 @@ export type QueryRequest = {
   doc_id?: string;
   session_id?: string;
   history?: ChatHistoryMessage[];
+  image?: string;
 };
 
 export type ChatHistoryMessage = {
@@ -184,17 +185,20 @@ type ErrorResponse = {
 };
 
 // Returns the existing backend signed session token from browser storage.
-function getStoredAccessToken(): string | null {
-  if (typeof window === "undefined") {
+export function getStoredAccessToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    // Read the standard token key while preserving existing signed-in installations.
+    return window.localStorage.getItem("token") || window.localStorage.getItem("docmind_access_token");
+  } catch {
     return null;
   }
-
-  return window.localStorage.getItem("docmind_access_token");
 }
 
 // Same-tab notification so account UI updates without a reload.
 export const SESSION_CHANGED_EVENT = "docmind:session-changed";
 
+// Notifies account and admin views when browser authentication changes.
 function notifySessionChanged(): void {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(SESSION_CHANGED_EVENT));
@@ -204,6 +208,7 @@ function notifySessionChanged(): void {
 // Saves a backend signed session token in browser storage.
 function storeAccessToken(token: string): void {
   if (typeof window !== "undefined") {
+    window.localStorage.setItem("token", token);
     window.localStorage.setItem("docmind_access_token", token);
     notifySessionChanged();
   }
@@ -217,8 +222,8 @@ export type SessionInfo = {
 
 // Decodes a base64url segment (no padding) into a UTF-8 string.
 function base64UrlDecode(segment: string): string {
-  const base64 = segment.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+  const base64 = (segment || "").replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64 + "=".repeat((4 - ((base64 || "").length % 4)) % 4);
   return atob(padded);
 }
 
@@ -248,6 +253,7 @@ export function getSessionInfo(): SessionInfo | null {
 // Clears the stored session; the next request mints a fresh anonymous session.
 export function signOut(): void {
   if (typeof window !== "undefined") {
+    window.localStorage.removeItem("token");
     window.localStorage.removeItem("docmind_access_token");
     notifySessionChanged();
   }
@@ -266,6 +272,8 @@ export async function ensureAccessToken(): Promise<string> {
     try {
       const response = await fetch(`${API_URL}/auth/session`, {
         method: "POST",
+        credentials: "include",
+        // Token issuance is public; every authenticated fetch below sends a real bearer.
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
@@ -273,6 +281,9 @@ export async function ensureAccessToken(): Promise<string> {
         throw new Error(await getErrorMessage(response));
       }
       const session = (await response.json()) as AuthSessionResponse;
+      // A delayed guest response must not overwrite a login completed in the meantime.
+      const current = getStoredAccessToken();
+      if (current) return current;
       storeAccessToken(session.data.access_token);
       return session.data.access_token;
     } finally {
@@ -302,32 +313,28 @@ function wait(ms: number): Promise<void> {
 }
 
 // Sends a fetch request, retrying transient network failures for safe calls.
-async function request(input: RequestInfo | URL, init: RequestInit, retry = true): Promise<Response> {
+async function request(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${await ensureAccessToken()}`);
   const method = (init.method ?? "GET").toUpperCase();
-  // Uploads are not blindly retried: a lost response may already have created a
-  // document. Queries and reads are safe to replay.
-  const canRetry = method === "GET" || String(input).endsWith("/query");
+  if (!(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
+  // Generated answers and ratings mutate durable activity, so only reads are replayed.
+  const canRetry = method === "GET";
   const attempts = canRetry ? 3 : 1;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      const response = await fetch(input, { ...init, headers });
-      if (response.status === 401 && retry) {
-        if (typeof window !== "undefined") {
-          window.localStorage.removeItem("docmind_access_token");
-        }
-        const freshHeaders = new Headers(init.headers);
-        freshHeaders.set("Authorization", `Bearer ${await ensureAccessToken()}`);
-        return await fetch(input, { ...init, headers: freshHeaders });
-      }
+      if (init.signal?.aborted) throw new DOMException("Request cancelled", "AbortError");
+      const response = await fetch(input, { ...init, headers, credentials: "include" });
+      // A provider's 401 is not proof that the user's session is invalid. Never
+      // discard identity/document ownership or mint a guest on an arbitrary API failure.
       if (canRetry && attempt + 1 < attempts && RETRYABLE_STATUS.has(response.status)) {
         await wait(400 * 2 ** attempt);
         continue;
       }
       return response;
-    } catch {
+    } catch (error) {
+      if (init.signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) throw error;
       if (attempt + 1 >= attempts) break;
       await wait(400 * 2 ** attempt);
     }
@@ -339,6 +346,7 @@ async function request(input: RequestInfo | URL, init: RequestInit, retry = true
 export async function loginAdmin(email: string, adminToken: string): Promise<AuthSessionResponse> {
   const response = await fetch(`${API_URL}/auth/session`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, admin_token: adminToken }),
   });
@@ -359,6 +367,7 @@ export async function signUpWithEmail(
 ): Promise<AuthSessionResponse> {
   const response = await fetch(`${API_URL}/auth/signup`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
@@ -379,6 +388,7 @@ export async function loginWithEmail(
 ): Promise<AuthSessionResponse> {
   const response = await fetch(`${API_URL}/auth/login`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
@@ -402,6 +412,7 @@ export function isSignedIn(): boolean {
 export async function loginWithGoogle(credential: string): Promise<AuthSessionResponse> {
   const response = await fetch(`${API_URL}/auth/google`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ credential }),
   });
@@ -512,6 +523,8 @@ export async function queryDocument(
   docIds: string[] | string,
   sessionIdOrHistory?: string | ChatHistoryMessage[],
   history: ChatHistoryMessage[] = [],
+  image?: string,
+  signal?: AbortSignal,
 ): Promise<QueryResponse> {
   const normalizedDocIds = Array.isArray(docIds) ? docIds : [docIds];
   const sessionId =
@@ -523,12 +536,14 @@ export async function queryDocument(
     question,
     doc_ids: normalizedDocIds,
     session_id: sessionId,
-    history: conversationHistory.slice(-8),
+    history: conversationHistory.slice(-8).map((message) => ({ role: message.role, content: typeof message.content === 'string' ? message.content.slice(0, 4000) : '' })),
+    image,
   };
 
   const recaptchaToken = await getRecaptchaToken("query");
   const response = await request(`${API_URL}/query`, {
     method: "POST",
+    signal,
     headers: {
       "Content-Type": "application/json",
       ...(recaptchaToken ? { "X-Recaptcha-Token": recaptchaToken } : {}),

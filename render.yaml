@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: docmind-ai-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --no-server-header
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: PINECONE_INDEX_NAME
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
+      - key: CLAMAV_REQUIRED
+        value: "false"
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: DOCUMENT_ENCRYPTION_KEY
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_ACCESS_TOKEN
+        generateValue: true
+      - key: FRONTEND_URL
+        sync: false

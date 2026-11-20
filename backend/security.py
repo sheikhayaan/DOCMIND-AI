@@ -18,6 +18,9 @@ import urllib.request
 import uuid
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
+from contextlib import AbstractContextManager
+from apm.database import get_pool
+from apm.incidents import record_dependency_failure
 from pathlib import Path
 from threading import Lock
 from typing import Any, AsyncGenerator
@@ -140,11 +143,9 @@ class SecurityStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
-    def _connect(self) -> sqlite3.Connection:
-        """Opens a SQLite connection configured for row dictionaries."""
-        conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _connect(self) -> AbstractContextManager[sqlite3.Connection]:
+        """Leases an instrumented WAL connection and returns it after commit or rollback."""
+        return get_pool(self.db_path, "security").connection()
 
     def _init_db(self) -> None:
         """Creates required security tables and indexes."""
@@ -317,6 +318,7 @@ class SecurityStore:
                 """,
                 (user_id, ip_address, user_agent[:250], now, now),
             )
+            conn.execute("UPDATE users SET last_seen_at = ? WHERE user_id = ?", (now, user_id))
 
     def block_ip(self, ip_address: str, reason: str) -> None:
         """Permanently blocks an IP address."""
@@ -682,6 +684,9 @@ RATE_LIMITS: dict[str, FixedWindowLimit] = {
         burst_max_requests=6,
     ),
     "general": FixedWindowLimit(window_seconds=60, max_requests=100),
+    # Live dashboards poll several authenticated endpoints; writes use a stricter budget.
+    "admin_read": FixedWindowLimit(window_seconds=60, max_requests=300),
+    "admin_write": FixedWindowLimit(window_seconds=60, max_requests=12),
     "vitals": FixedWindowLimit(window_seconds=60, max_requests=120),
 }
 
@@ -966,7 +971,8 @@ def verify_recaptcha_token(token: str | None, action: str, remote_ip: str | None
     try:
         with urllib.request.urlopen(RECAPTCHA_VERIFY_URL, data=payload, timeout=5) as response:
             result = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+        record_dependency_failure("recaptcha", exc, "/recaptcha")
         return False
     if not result.get("success"):
         return False
@@ -1036,7 +1042,13 @@ class AuthService:
                 raise ValueError("bad signature")
             padded = body + ("=" * (-len(body) % 4))
             payload = json.loads(base64.urlsafe_b64decode(padded.encode()).decode())
-            if int(payload.get("exp", 0)) < int(time.time()):
+            if not isinstance(payload, dict) or not isinstance(payload.get("sub"), str):
+                raise ValueError("invalid subject")
+            if len(payload["sub"]) > 100 or not ID_PATTERN.fullmatch(payload["sub"]):
+                raise ValueError("invalid subject")
+            if payload.get("role") not in {"user", "admin"}:
+                raise ValueError("invalid role")
+            if int(payload.get("exp", 0)) <= int(time.time()):
                 raise ValueError("expired")
             return payload
         except Exception as exc:
@@ -1187,6 +1199,7 @@ class AuthService:
                 clock_skew_in_seconds=10,
             )
         except Exception as exc:
+            record_dependency_failure("google-auth", exc, "/auth/google")
             raise HTTPException(status_code=401, detail="Invalid Google credential") from exc
         if claims.get("iss") not in {"accounts.google.com", "https://accounts.google.com"}:
             raise HTTPException(status_code=401, detail="Invalid Google token issuer")
@@ -1232,12 +1245,13 @@ class AuthService:
         if not user or user.get("is_blocked"):
             raise HTTPException(status_code=403, detail="Access denied")
         note_request_device(request, str(payload.get("sub", "")))
-        return payload
+        # Persisted roles and suspensions take effect for already-issued tokens.
+        return {**payload, "role": user.get("role", "user")}
 
     def require_admin(self, request: Request) -> dict[str, Any]:
-        """Returns the current admin user or rejects the request."""
+        """Returns a verified, non-suspended user with the current stored admin role."""
         user = self.current_user(request)
-        if not ADMIN_EMAIL or user.get("role") != "admin" or user.get("email") != ADMIN_EMAIL:
+        if user.get("role") != "admin":
             ip_address = get_request_ip(request)
             now = time.time()
             recent = [

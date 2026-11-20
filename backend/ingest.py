@@ -1,3 +1,4 @@
+from pathlib import Path
 """PDF ingestion: extract, chunk, embed, and durably index document vectors.
 
 The queue worker calls ingest_pdf() with a stage callback so the status endpoint
@@ -20,7 +21,7 @@ from pinecone import Pinecone
 
 from session_store import session_store
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 DOC_METADATA = {}
 LOCAL_DOC_CHUNKS = {}
@@ -34,12 +35,22 @@ def total_rows(value: int) -> int:
     return max(0, int(value))
 
 
+def _resolve_model_name() -> str:
+    """Uses cached snapshot directory directly to avoid offline network timeout delays."""
+    default_name = "sentence-transformers/all-MiniLM-L6-v2"
+    hub_cache = Path(os.path.expanduser("~/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots"))
+    if hub_cache.is_dir():
+        snapshots = list(hub_cache.iterdir())
+        if snapshots and snapshots[0].is_dir():
+            return str(snapshots[0])
+    return default_name
+
 # Caches the HuggingFace embedding model so it loads once and is reused.
 def get_embeddings():
     global _embeddings_model
     if _embeddings_model is None:
         _embeddings_model = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            model_name=_resolve_model_name(),
             model_kwargs={"device": "cpu"},
             encode_kwargs={"normalize_embeddings": True},
         )

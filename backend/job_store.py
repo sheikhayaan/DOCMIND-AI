@@ -11,6 +11,9 @@ import time
 from pathlib import Path
 from threading import Lock
 from typing import Any
+from contextlib import AbstractContextManager
+
+from apm.database import get_pool
 
 TERMINAL_STATES = {"ready", "failed", "cancelled"}
 STAGES = ("queued", "extracting", "chunking", "embedding", "indexing", "ready")
@@ -26,13 +29,9 @@ class IngestionJobStore:
         self.lock = Lock()
         self._init_db()
 
-    def _connect(self) -> sqlite3.Connection:
-        """Opens a WAL-mode SQLite connection with a busy timeout for workers."""
-        conn = sqlite3.connect(self.db_path, timeout=10, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        return conn
+    def _connect(self) -> AbstractContextManager[sqlite3.Connection]:
+        """Leases an instrumented WAL connection shared by this worker's job operations."""
+        return get_pool(self.db_path, "jobs").connection()
 
     def _init_db(self) -> None:
         """Creates the jobs table and its lookup indexes."""

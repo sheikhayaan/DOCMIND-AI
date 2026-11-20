@@ -8,7 +8,7 @@ import Navbar from '@/components/Navbar';
 import {
   Upload, Zap, Code2, GraduationCap, Briefcase,
   FlaskConical, ArrowRight, CheckCircle2, FileText, Brain,
-  Lock, ChevronRight, Sparkles, Search, MessageSquare, AlertCircle, Trash2, History
+  Lock, ChevronRight, Sparkles, Search, MessageSquare, AlertCircle, Trash2, History, X
 } from 'lucide-react';
 import {
   ensureAccessToken,
@@ -354,6 +354,7 @@ export default function HomePage() {
   const [conversations, setConversations] = useState<StoredConversation[]>([]);
   const [slots, setSlots] = useState<PDFSlotStatus | null>(null);
   const [busyDocId, setBusyDocId] = useState<string | null>(null);
+  const [legalModal, setLegalModal] = useState<'privacy' | 'terms' | null>(null);
 
   // Loads the signed-in (or guest) document list plus local chat transcripts.
   const refreshWorkspace = useCallback(async () => {
@@ -892,16 +893,100 @@ export default function HomePage() {
           </div>
           <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)' }}>© 2024 DocMind AI · Built with Next.js + FastAPI + LangChain</p>
           <div style={{ display: 'flex', gap: 20 }}>
-            {['Privacy', 'Terms', 'GitHub'].map((link) => (
-              <a key={link} href="#" style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', textDecoration: 'none', transition: 'color 0.2s' }}
-                onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.8)')}
-                onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.3)')}>
-                {link}
-              </a>
-            ))}
+            <button
+              type="button"
+              onClick={() => setLegalModal('privacy')}
+              style={{ background: 'none', border: 'none', fontSize: 13, color: 'rgba(255,255,255,0.4)', cursor: 'pointer', transition: 'color 0.2s' }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.9)')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}
+            >
+              Privacy
+            </button>
+            <button
+              type="button"
+              onClick={() => setLegalModal('terms')}
+              style={{ background: 'none', border: 'none', fontSize: 13, color: 'rgba(255,255,255,0.4)', cursor: 'pointer', transition: 'color 0.2s' }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.9)')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}
+            >
+              Terms
+            </button>
+            <a
+              href="https://github.com"
+              target="_blank"
+              rel="noreferrer"
+              style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', textDecoration: 'none', transition: 'color 0.2s' }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.9)')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}
+            >
+              GitHub
+            </a>
           </div>
         </div>
       </footer>
+
+        <AnimatePresence>
+          {legalModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 10000,
+                background: 'rgba(0,0,0,0.8)',
+                backdropFilter: 'blur(8px)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '20px',
+              }}
+              onClick={() => setLegalModal(null)}
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+                className="glass"
+                style={{
+                  maxWidth: '560px',
+                  width: '100%',
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: '20px',
+                  padding: '28px',
+                  color: 'var(--text-primary)',
+                  boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: 700 }}>
+                    {legalModal === 'privacy' ? 'Privacy Policy' : 'Terms of Service'}
+                  </h3>
+                  <button
+                    onClick={() => setLegalModal(null)}
+                    style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <div style={{ fontSize: '14px', lineHeight: 1.6, color: 'var(--text-secondary)' }}>
+                  {legalModal === 'privacy' ? (
+                    <p>
+                      DocMind AI uses cryptographic tenant isolation and ephemeral vector storage. Uploaded documents are processed strictly to answer your active questions. We do not use customer documents to train foundation models, nor share sensitive content with third parties.
+                    </p>
+                  ) : (
+                    <p>
+                      DocMind AI is provided for document exploration and research assistance. Users are responsible for ensuring they possess lawful rights to upload documents. Rate limits and quota allowances are enforced to maintain quality of service for all users.
+                    </p>
+                  )}
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
     </div>
   );
 }

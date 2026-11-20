@@ -1,6 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
+import styles from './toast.module.css';
 
 export type ToastMessage = {
   id: string;
@@ -12,10 +13,10 @@ type ToastStackProps = {
   toasts: ToastMessage[];
 };
 
-// Renders animated toast notifications in the bottom-right corner.
+// Renders non-intercepting fixed notifications without relying on globally loaded utility CSS.
 export function ToastStack({ toasts }: ToastStackProps) {
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex w-[calc(100%-2rem)] max-w-sm flex-col gap-3 sm:bottom-6 sm:right-6">
+    <div className={styles.viewport} role="status" aria-live="polite" aria-atomic="false">
       <AnimatePresence>
         {toasts.map((toast) => (
           <motion.div
@@ -24,11 +25,7 @@ export function ToastStack({ toasts }: ToastStackProps) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.96 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
-            className={`rounded-xl border px-4 py-3 text-sm shadow-2xl ${
-              toast.type === "success"
-                ? "border-emerald-400/20 bg-emerald-500 text-white"
-                : "border-red-400/20 bg-red-500 text-white"
-            }`}
+            className={`${styles.toast} ${styles[toast.type]}`}
           >
             {toast.message}
           </motion.div>

@@ -18,11 +18,17 @@ import {
   MessageSquare,
   Plus,
   X,
+  Paperclip,
+  Mic,
   type LucideIcon,
 } from 'lucide-react';
+import { ToastStack, type ToastMessage } from '@/components/toast';
 import dynamic from 'next/dynamic';
 import Navbar from '@/components/Navbar';
 import StructuredAnswer from '@/components/StructuredAnswer';
+import ReadAloudButton from '@/components/read-aloud-button';
+import SessionRating from '@/components/session-rating';
+import { safeText } from '@/lib/text-safety';
 import { queryDocument, getSuggestions, type ChatHistoryMessage } from '@/lib/api';
 import {
   chatStorageKey,
@@ -41,6 +47,32 @@ interface Source {
   text: string;
 }
 
+interface SpeechRecognitionResultItem {
+  transcript: string;
+}
+
+interface SpeechRecognitionResultList {
+  [index: number]: {
+    [index: number]: SpeechRecognitionResultItem;
+  };
+  length: number;
+}
+
+interface SpeechRecognitionEventLike {
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: unknown) => void) | null;
+  onend: (() => void) | null;
+}
+
 interface Message {
   role: 'user' | 'ai';
   content: string;
@@ -48,9 +80,22 @@ interface Message {
   confidence?: string;
   answerSource?: 'document' | 'general' | 'assistant';
   time: string;
-  // Transient: only a freshly received answer animates in. Restored history
-  // renders instantly so reopening a chat is not a replay.
+  image?: string;
   animate?: boolean;
+}
+
+// Validates browser-stored messages before rendering or reading them aloud.
+function restoreMessage(value: unknown): Message | null {
+  if (!value || typeof value !== 'object') return null;
+  const message = value as Partial<Message>;
+  if ((message.role !== 'user' && message.role !== 'ai') || typeof message.content !== 'string') return null;
+  return {
+    role: message.role, content: safeText(message.content), time: safeText(message.time, 40), animate: false,
+    confidence: safeText(message.confidence, 20),
+    answerSource: ['document', 'general', 'assistant'].includes(message.answerSource || '') ? message.answerSource : undefined,
+    image: typeof message.image === 'string' && /^data:image\/(png|jpeg|webp);base64,/.test(message.image) ? message.image : undefined,
+    sources: Array.isArray(message.sources) ? message.sources.filter((source) => source && Number.isFinite(source.page)).map((source) => ({ page: source.page, text: safeText(source.text, MAX_STORED_SOURCE_CHARS) })) : [],
+  };
 }
 
 // Chat transcripts persist per document so a reload or a later visit keeps the
@@ -144,8 +189,8 @@ function SourceChip({ source, delay }: { source: Source; delay: number }) {
                 color: 'rgba(255,255,255,0.55)',
               }}
             >
-              {source.text.slice(0, 100)}
-              {source.text.length > 100 ? '…' : ''}
+              {(source.text || '').slice(0, 100)}
+              {(source.text || '').length > 100 ? '…' : ''}
             </p>
           </motion.div>
         )}
@@ -154,10 +199,12 @@ function SourceChip({ source, delay }: { source: Source; delay: number }) {
   );
 }
 
+// Formats one chat turn timestamp for the local browser.
 function timeNow() {
   return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+// Suspends the search-parameter-dependent chat until the client router is ready.
 export default function ChatPage() {
   return (
     <Suspense fallback={<ChatFallback />}>
@@ -166,10 +213,12 @@ export default function ChatPage() {
   );
 }
 
+// Keeps the shell stable while the chat route initializes.
 function ChatFallback() {
   return <div style={{ minHeight: '100vh', background: '#000', color: '#fff' }} />;
 }
 
+// Runs document chat with abortable turns, manual speech, and real session feedback.
 function ChatContent() {
   const params = useSearchParams();
   const router = useRouter();
@@ -188,9 +237,20 @@ function ChatContent() {
   // Guards the save effect so it cannot overwrite stored history with the empty
   // initial state before the restore effect has run.
   const [hydrated, setHydrated] = useState(false);
+  const [hydratedDocId, setHydratedDocId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [turnIndex, setTurnIndex] = useState(1);
+  const requestRef = useRef<AbortController | null>(null);
+  const turnRequestRef = useRef(0);
   // Separate history panel: lists every saved conversation in this browser.
   const [historyOpen, setHistoryOpen] = useState(false);
   const [conversations, setConversations] = useState<StoredConversation[]>([]);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [attachedImage, setAttachedImage] = useState<string | null>(null);
+  const [attachedImageName, setAttachedImageName] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isMac] = useState(
     () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform),
   );
@@ -199,6 +259,33 @@ function ChatContent() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Surface animated feedback toast notifications
+  const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
+    const id = `${Date.now()}-${Math.random()}`;
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3200);
+  }, []);
+
+  // Stops microphone callbacks before cancellation so late transcripts cannot overwrite the next turn.
+  const stopDictation = useCallback(() => {
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (recognition) {
+      recognition.onresult = null; recognition.onerror = null; recognition.onend = null;
+      try { recognition.abort(); } catch { /* An already-disconnected microphone needs no action. */ }
+    }
+  }, []);
+
+  // Aborts old requests and microphone sessions when switching documents or leaving the page.
+  useEffect(() => () => {
+    turnRequestRef.current += 1;
+    requestRef.current?.abort(); requestRef.current = null;
+    stopDictation();
+  }, [docId, stopDictation]);
+
+  // Builds local prompt suggestions for the selected document.
   const loadSuggestions = useCallback(() => {
     getSuggestions(docId, docType)
       .then((res) => setSuggestions(res.length ? res : null))
@@ -209,19 +296,28 @@ function ChatContent() {
   // there is nothing to restore.
   useEffect(() => {
     setHydrated(false);
+    setLoading(false);
+    setIsListening(false);
+    setSessionId(null);
+    setTurnIndex(1);
     let restoredCount = 0;
 
     try {
       const raw = window.localStorage.getItem(chatStorageKey(docId));
       if (raw) {
         const saved = JSON.parse(raw) as {
-          messages?: Message[];
+          messages?: unknown[];
           history?: ChatHistoryMessage[];
-        };
-        if (Array.isArray(saved.messages) && saved.messages.length) {
-          setMessages(saved.messages.map((msg) => ({ ...msg, animate: false })));
-          setHistory(Array.isArray(saved.history) ? saved.history : []);
-          restoredCount = saved.messages.length;
+          sessionId?: string;
+          turnIndex?: number;
+        } | null;
+        if (Array.isArray(saved?.messages) && saved.messages.length) {
+          const restored = saved.messages.map(restoreMessage).filter((message): message is Message => message !== null);
+          setMessages(restored);
+          setHistory(Array.isArray(saved.history) ? saved.history.filter((message) => message && ['user', 'assistant'].includes(message.role) && typeof message.content === 'string').map((message) => ({ role: message.role, content: safeText(message.content, 4000) })).slice(-8) : []);
+          setSessionId(typeof saved.sessionId === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(saved.sessionId) ? saved.sessionId : null);
+          setTurnIndex(typeof saved.turnIndex === 'number' && Number.isSafeInteger(saved.turnIndex) && saved.turnIndex <= 1_000_000 ? Math.max(1, saved.turnIndex) : restored.filter((message) => message.role === 'user').length + 1);
+          restoredCount = restored.length;
         }
       }
     } catch {
@@ -235,13 +331,14 @@ function ChatContent() {
     } else {
       setSuggestions(null);
     }
+    setHydratedDocId(docId);
     setHydrated(true);
   }, [docId, loadSuggestions]);
 
   // Persist the transcript whenever it changes. Best effort: private mode and
   // quota errors must never break the chat.
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || hydratedDocId !== docId) return;
     const key = chatStorageKey(docId);
     try {
       if (!messages.length) {
@@ -252,10 +349,12 @@ function ChatContent() {
         role: msg.role,
         content: msg.content,
         confidence: msg.confidence,
+        answerSource: msg.answerSource,
         time: msg.time,
+        image: msg.image,
         sources: msg.sources?.map((source) => ({
           page: source.page,
-          text: source.text.slice(0, MAX_STORED_SOURCE_CHARS),
+          text: (source.text || '').slice(0, MAX_STORED_SOURCE_CHARS),
         })),
       }));
       window.localStorage.setItem(
@@ -263,7 +362,9 @@ function ChatContent() {
         JSON.stringify({
           messages: trimmed,
           history: history.slice(-16),
-          filename: decodeURIComponent(filename),
+          filename: safeText(filename, 255),
+          sessionId,
+          turnIndex,
           docType,
           updatedAt: Date.now(),
         }),
@@ -271,7 +372,7 @@ function ChatContent() {
     } catch {
       // Storage unavailable or full — the in-memory chat still works.
     }
-  }, [messages, history, hydrated, docId, filename, docType]);
+  }, [messages, history, hydrated, hydratedDocId, docId, filename, docType, sessionId, turnIndex]);
 
   // Re-reads the saved conversation list so the panel always shows fresh data.
   const refreshConversations = useCallback(() => {
@@ -308,18 +409,139 @@ function ChatContent() {
     ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
   }, [input]);
 
+  // Handles image selection, format check, and size limit validation
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validTypes = ['image/png', 'image/jpeg', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      showToast('Only PNG, JPEG, and WebP images are supported', 'error');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('Image size exceeds 10MB limit', 'error');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setAttachedImage(reader.result);
+        setAttachedImageName(file.name);
+        showToast(`Attached image: ${file.name}`, 'success');
+      }
+    };
+    reader.onerror = () => {
+      showToast('Failed to read image file', 'error');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Clears currently attached image
+  const removeAttachedImage = () => {
+    setAttachedImage(null);
+    setAttachedImageName(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Toggles speech recognition dictation
+  const toggleSpeechRecognition = () => {
+    if (typeof window === 'undefined') return;
+
+    const SpeechRecognitionConstructor =
+      (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike }).SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionConstructor) {
+      showToast('Voice dictation is not supported in this browser. Try Chrome or Edge.', 'error');
+      return;
+    }
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognitionConstructor();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      const baseInput = (input || '').trim();
+      recognition.onresult = (event: SpeechRecognitionEventLike) => {
+        if (recognitionRef.current !== recognition) return;
+        let transcript = '';
+        for (let i = 0; i < (event.results?.length ?? 0); i++) {
+          transcript += event.results[i]?.[0]?.transcript || '';
+        }
+        if (transcript) setInput(`${baseInput} ${transcript}`.trim().slice(0, 4000));
+      };
+      recognition.onerror = () => {
+        if (recognitionRef.current !== recognition) return;
+        setIsListening(false);
+        showToast('Microphone unavailable. Type your question or choose Next / Skip.', 'error');
+      };
+      recognition.onend = () => {
+        if (recognitionRef.current === recognition) setIsListening(false);
+      };
+      recognitionRef.current = recognition;
+      recognition.start();
+      setIsListening(true);
+      showToast('Listening... Speak now', 'success');
+    } catch {
+      setIsListening(false);
+      showToast('Microphone access denied or unavailable', 'error');
+    }
+  };
+
+  // Sends one cancelable turn and ignores stale responses after Next / Skip or navigation.
   const send = async (question: string) => {
-    const trimmed = question.trim();
-    if (!trimmed || loading) return;
+    const trimmed = (question || '').trim();
+    if ((!trimmed && !attachedImage) || loading || requestRef.current) return;
+
+    if (!docId) {
+      showToast('Please select or upload a document first before querying.', 'error');
+      return;
+    }
+
+    const controller = new AbortController();
+    requestRef.current = controller;
+    const sequence = ++turnRequestRef.current;
+    const timeout = setTimeout(() => controller.abort(), 45_000);
+    stopDictation(); setIsListening(false);
+    const currentImage = attachedImage;
     setInput('');
+    setAttachedImage(null);
+    setAttachedImageName(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
     setLoading(true);
     setSuggestions(null);
 
-    const userMsg: Message = { role: 'user', content: trimmed, time: timeNow() };
+    const userMsg: Message = {
+      role: 'user',
+      content: trimmed || '(Attached image)',
+      image: currentImage || undefined,
+      time: timeNow(),
+    };
     setMessages((prev) => [...prev, userMsg]);
 
     try {
-      const res = await queryDocument(trimmed, docId, history);
+      const res = await queryDocument(
+        trimmed || 'Describe and analyze this image in the context of the document.',
+        docId,
+        sessionId || undefined,
+        history,
+        currentImage || undefined,
+        controller.signal,
+      );
+      if (sequence !== turnRequestRef.current) return;
+      setSessionId(res.session_id || null);
       const aiMsg: Message = {
         role: 'ai',
         content: res.answer,
@@ -332,16 +554,18 @@ function ChatContent() {
       setMessages((prev) => [...prev, aiMsg]);
       setHistory((prev) => [
         ...prev,
-        { role: 'user', content: trimmed },
+        { role: 'user', content: trimmed || 'Image analysis query' },
         { role: 'assistant', content: res.answer },
       ]);
     } catch (queryError) {
+      if (sequence !== turnRequestRef.current) return;
       setMessages((prev) => [
         ...prev,
         {
           role: 'ai',
-          content:
-            queryError instanceof Error
+          content: controller.signal.aborted
+            ? 'This request took too long. You can type another question or choose Next / Skip.'
+            : queryError instanceof Error
               ? queryError.message
               : 'Something went wrong reaching the server. Please try again.',
           confidence: 'low',
@@ -349,12 +573,34 @@ function ChatContent() {
           animate: true,
         },
       ]);
+    } finally {
+      clearTimeout(timeout);
+      if (sequence === turnRequestRef.current) {
+        requestRef.current = null;
+        setLoading(false);
+        setTurnIndex((value) => value + 1);
+      }
     }
-    setLoading(false);
+  };
+
+  // Guarantees forward progress even with an empty answer, denied microphone, or hung request.
+  const skipTurn = () => {
+    turnRequestRef.current += 1;
+    requestRef.current?.abort(); requestRef.current = null;
+    stopDictation(); setIsListening(false);
+    setLoading(false); setInput(''); setSessionId(null);
+    removeAttachedImage();
+    setTurnIndex((value) => value + 1);
+    textareaRef.current?.focus();
+    showToast('Turn skipped. Ready for your next question; server work may finish separately.');
   };
 
   // Discards this document's transcript, in memory and in storage.
   const clearChat = () => {
+    turnRequestRef.current += 1;
+    requestRef.current?.abort(); requestRef.current = null;
+    stopDictation(); setIsListening(false); setLoading(false);
+    setSessionId(null); setTurnIndex(1);
     setMessages([]);
     setHistory([]);
     deleteConversation(docId);
@@ -366,9 +612,7 @@ function ChatContent() {
   const removeConversation = (targetDocId: string) => {
     deleteConversation(targetDocId);
     if (targetDocId === docId) {
-      setMessages([]);
-      setHistory([]);
-      loadSuggestions();
+      clearChat();
     }
     refreshConversations();
   };
@@ -383,19 +627,24 @@ function ChatContent() {
     );
   };
 
+  // Copies text defensively and reports browser clipboard restrictions.
   const copyMessage = (text: string, index: number) => {
     navigator.clipboard.writeText(text).then(() => {
       setCopiedIndex(index);
+      showToast('Copied response to clipboard', 'success');
       setTimeout(() => setCopiedIndex(null), 2000);
+    }).catch(() => {
+      showToast('Failed to copy to clipboard', 'error');
     });
   };
 
+  // Returns the current view to the latest turn without changing the conversation.
   const scrollToBottom = () => {
     containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight, behavior: 'smooth' });
   };
 
   const typeStyle = TYPE_STYLES[docType] || TYPE_STYLES.general;
-  const charCount = input.length;
+  const charCount = (input || '').length;
 
   // Track PDF panel visibility
   const [pdfOpen, setPdfOpen] = useState(true);
@@ -423,7 +672,7 @@ function ChatContent() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <FileText size={14} color="#3b82f6" />
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>
-                  {decodeURIComponent(filename)}
+                  {safeText(filename, 255)}
                 </span>
               </div>
               <button onClick={() => setPdfOpen(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '2px 6px', borderRadius: 6 }}>×</button>
@@ -458,6 +707,7 @@ function ChatContent() {
 
       {/* Document info pill */}
       <motion.div
+        className="chat-document-bar"
         initial={{ opacity: 0, y: -20, x: '-50%' }}
         animate={{ opacity: 1, y: 0, x: '-50%' }}
         transition={{ delay: 0.3 }}
@@ -547,9 +797,10 @@ function ChatContent() {
             maxWidth: '240px',
           }}
         >
-          {decodeURIComponent(filename)}
+          {safeText(filename, 255)}
         </span>
         <span
+          className="chat-document-type"
           style={{
             background: typeStyle.bg,
             border: `1px solid ${typeStyle.border}`,
@@ -795,12 +1046,45 @@ function ChatContent() {
           height: 'calc(100vh - 100px)',
           overflowY: 'auto',
           paddingTop: '170px',
-          paddingBottom: '140px',
+          paddingBottom: '210px',
         }}
       >
         <div style={{ maxWidth: '900px', margin: '0 auto', padding: '0 24px' }}>
           {/* Empty state */}
-          {messages.length === 0 && (
+          {!docId ? (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="glass"
+              style={{
+                maxWidth: '600px',
+                margin: '40px auto',
+                padding: '32px',
+                borderRadius: '24px',
+                textAlign: 'center',
+                border: '1px solid rgba(234, 179, 8, 0.3)',
+                background: 'rgba(234, 179, 8, 0.05)',
+              }}
+            >
+              <div style={{ display: 'inline-flex', padding: 12, borderRadius: '50%', background: 'rgba(234, 179, 8, 0.1)', color: '#facc15', marginBottom: 16 }}>
+                <AlertTriangle size={32} />
+              </div>
+              <h3 style={{ fontSize: '20px', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>
+                No Document Selected
+              </h3>
+              <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.65)', lineHeight: 1.6, marginBottom: '24px' }}>
+                DocMind needs a document to ground its answers and citations. Upload a PDF or select an existing conversation to begin.
+              </p>
+              <button
+                type="button"
+                onClick={() => router.push('/')}
+                className="glow-btn"
+                style={{ padding: '12px 28px', borderRadius: '12px', fontSize: '14px', fontWeight: 600 }}
+              >
+                Go to Document Upload →
+              </button>
+            </motion.div>
+          ) : messages.length === 0 && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -959,6 +1243,22 @@ function ChatContent() {
                         boxShadow: '0 8px 32px rgba(139,92,246,0.25)',
                       }}
                     >
+                      {msg.image && (
+                        <div style={{ marginBottom: 12 }}>
+                          <img
+                            src={msg.image}
+                            alt="Attached preview"
+                            style={{
+                              maxWidth: '100%',
+                              maxHeight: '220px',
+                              borderRadius: '12px',
+                              objectFit: 'contain',
+                              background: 'rgba(0,0,0,0.2)',
+                              border: '1px solid rgba(255,255,255,0.2)',
+                            }}
+                          />
+                        </div>
+                      )}
                       {msg.content}
                     </div>
                   ) : (
@@ -978,7 +1278,8 @@ function ChatContent() {
                         boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
                       }}
                     >
-                      <StructuredAnswer text={msg.content} animate={msg.animate} />
+                      <StructuredAnswer text={msg.content || ''} animate={msg.animate} />
+                      <ReadAloudButton key={`${docId}-${i}`} text={msg.content} />
                       <button
                         onClick={() => copyMessage(msg.content, i)}
                         className="copy-btn"
@@ -1118,6 +1419,10 @@ function ChatContent() {
             </motion.div>
           )}
 
+          {sessionId && !loading && <SessionRating key={sessionId} sessionId={sessionId} onCompleted={(finishedId) => {
+            setSessionId((current) => current === finishedId ? null : current);
+            showToast('Session completed. Thanks for your feedback.');
+          }} />}
           <div ref={bottomRef} />
         </div>
       </div>
@@ -1163,6 +1468,45 @@ function ChatContent() {
           zIndex: 10,
         }}
       >
+        {/* Attached image preview banner */}
+        <AnimatePresence>
+          {attachedImage && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+              style={{
+                marginBottom: '10px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '6px 14px 6px 8px',
+                borderRadius: '16px',
+                background: 'rgba(15, 23, 42, 0.85)',
+                backdropFilter: 'blur(16px)',
+                border: '1px solid rgba(99, 102, 241, 0.4)',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+              }}
+            >
+              <img
+                src={attachedImage}
+                alt="Upload preview"
+                style={{ width: '36px', height: '36px', objectFit: 'cover', borderRadius: '10px' }}
+              />
+              <span style={{ fontSize: '12px', color: '#e2e8f0', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {attachedImageName || 'Attached image'}
+              </span>
+              <button
+                type="button"
+                onClick={removeAttachedImage}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.6)', padding: '2px', display: 'flex' }}
+              >
+                <X size={14} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Keyboard shortcut hint */}
         <AnimatePresence>
           {focused && (
@@ -1184,6 +1528,7 @@ function ChatContent() {
         </AnimatePresence>
 
         <motion.div
+          className="chat-composer"
           animate={{
             borderColor: focused ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.1)',
             boxShadow: focused
@@ -1202,8 +1547,66 @@ function ChatContent() {
             padding: '8px 8px 8px 28px',
           }}
         >
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImageSelect}
+            accept="image/png,image/jpeg,image/webp"
+            style={{ display: 'none' }}
+          />
+
+          {/* File attach button */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            title="Attach image (PNG, JPEG, WebP)"
+            style={{
+              background: 'none',
+              border: 'none',
+              color: attachedImage ? '#818cf8' : 'rgba(255,255,255,0.5)',
+              cursor: 'pointer',
+              padding: '10px 8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '50%',
+              transition: 'color 0.2s',
+            }}
+          >
+            <Paperclip size={20} />
+          </button>
+
+          {/* Voice dictation button */}
+          <button
+            type="button"
+            onClick={toggleSpeechRecognition}
+            title={isListening ? 'Stop listening' : 'Dictate question with voice'}
+            style={{
+              background: isListening ? 'rgba(239, 68, 68, 0.2)' : 'none',
+              border: isListening ? '1px solid rgba(239, 68, 68, 0.5)' : 'none',
+              color: isListening ? '#f87171' : 'rgba(255,255,255,0.5)',
+              cursor: 'pointer',
+              padding: '10px 8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '50%',
+              transition: 'all 0.2s',
+            }}
+          >
+            {isListening ? (
+              <motion.div animate={{ scale: [1, 1.25, 1] }} transition={{ repeat: Infinity, duration: 1 }}>
+                <Mic size={20} color="#f87171" />
+              </motion.div>
+            ) : (
+              <Mic size={20} />
+            )}
+          </button>
+
           <textarea
             ref={textareaRef}
+            aria-label="Your document question"
+            maxLength={4000}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onFocus={() => setFocused(true)}
@@ -1218,6 +1621,7 @@ function ChatContent() {
             rows={1}
             style={{
               flex: 1,
+              minWidth: 0,
               background: 'transparent',
               border: 'none',
               outline: 'none',
@@ -1234,16 +1638,18 @@ function ChatContent() {
           <motion.button
             whileHover={input.trim() ? { scale: 1.08 } : {}}
             whileTap={input.trim() ? { scale: 0.92 } : {}}
+            aria-label="Submit question"
+            title="Submit question"
             onClick={() => send(input)}
-            disabled={!input.trim() || loading}
-            className={input.trim() ? 'send-active' : ''}
+            disabled={(!input.trim() && !attachedImage) || loading}
+            className={(input.trim() || attachedImage) ? 'send-active' : ''}
             style={{
               position: 'relative',
               width: '48px',
               height: '48px',
               borderRadius: '50%',
               border: 'none',
-              cursor: input.trim() ? 'pointer' : 'not-allowed',
+              cursor: (input.trim() || attachedImage) ? 'pointer' : 'not-allowed',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -1255,16 +1661,9 @@ function ChatContent() {
             <ArrowUp size={20} color={input.trim() ? '#fff' : '#444'} style={{ position: 'relative', zIndex: 1 }} />
           </motion.button>
         </motion.div>
-        <div
-          style={{
-            textAlign: 'right',
-            fontSize: '12px',
-            color: charCount > 500 ? '#f87171' : 'rgba(255,255,255,0.2)',
-            marginTop: '6px',
-            paddingRight: '16px',
-          }}
-        >
-          {charCount} / 500
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 8 }}>
+          <button type="button" onClick={skipTurn} style={{ minHeight: 44, padding: '9px 15px', border: '1px solid #91a6ff55', borderRadius: 12, background: '#182447', color: '#d9e2ff', fontSize: 13, cursor: 'pointer' }}>Next / Skip →</button>
+          <span aria-live="polite" style={{ fontSize: 12, color: '#adbcdc' }}>Turn {turnIndex} · {charCount} / 4000</span>
         </div>
       </div>
 
@@ -1307,6 +1706,13 @@ function ChatContent() {
             transform: rotate(360deg);
           }
         }
+        @media (max-width: 600px) {
+          .chat-document-bar { gap: 8px !important; padding: 10px 12px !important; max-width: calc(100vw - 24px) !important; }
+          .chat-document-type { display: none; }
+          .chat-composer { gap: 4px !important; padding: 8px 6px !important; }
+          .chat-composer textarea { font-size: 16px !important; }
+          .ai-bubble { max-width: 100% !important; padding: 20px 16px !important; }
+        }
         @media (min-width: 900px) {
           .sparkle-deco {
             display: block !important;
@@ -1320,6 +1726,7 @@ function ChatContent() {
         }
       `}</style>
     </div>
+      <ToastStack toasts={toasts} />
     </div>
   );
 }

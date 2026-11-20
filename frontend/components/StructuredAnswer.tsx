@@ -2,6 +2,7 @@
 
 import { Fragment, useMemo, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
+import { safeText, splitPrompt } from '@/lib/text-safety';
 
 /**
  * Renders structured Markdown emitted by the RAG backend: headings,
@@ -26,8 +27,9 @@ const FENCE_RE = /^\s*```/;
 const BOLD_LINE_RE = /^\s*\*\*(.+?)\*\*:?\s*$/;
 const TABLE_ROW_RE = /^\s*\|.*\|\s*$/;
 
+// Parses bounded table text without assuming an external string is present.
 function parseTableCell(line: string): string[] {
-  const parts = line.split('|');
+  const parts = (line || '').split('|');
   if (parts.length < 2) return [];
   // Slice off the outer empty parts caused by leading/trailing pipes
   const start = parts[0].trim() === '' ? 1 : 0;
@@ -35,8 +37,9 @@ function parseTableCell(line: string): string[] {
   return parts.slice(start, end).map((cell) => cell.trim());
 }
 
+// Converts safe Markdown into typed display blocks without interpreting HTML.
 function parseBlocks(source: string): Block[] {
-  const lines = source.replace(/\r\n/g, '\n').split('\n');
+  const lines = safeText(source).replace(/\r\n/g, '\n').split('\n');
   const blocks: Block[] = [];
   let paragraph: string[] = [];
 
@@ -97,7 +100,7 @@ function parseBlocks(source: string): Block[] {
       flushParagraph();
       blocks.push({
         kind: 'heading',
-        level: heading[1].length <= 2 ? 2 : 3,
+        level: (heading[1] || '').length <= 2 ? 2 : 3,
         text: heading[2].trim(),
       });
       continue;
@@ -146,26 +149,27 @@ function parseBlocks(source: string): Block[] {
 
 const INLINE_RE = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\n]+\*|\(p+\.\s*\d+[^)]*\))/g;
 
+// Renders inline formatting with string guards and React's default escaping.
 function renderInline(text: string, keyPrefix: string): ReactNode[] {
-  return text.split(INLINE_RE).map((part, index) => {
+  return (text || '').split(INLINE_RE).map((part, index) => {
     const key = `${keyPrefix}-${index}`;
     if (!part) return null;
 
-    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+    if (part.startsWith('`') && part.endsWith('`') && (part || '').length > 2) {
       return (
         <code key={key} className="sa-code">
           {part.slice(1, -1)}
         </code>
       );
     }
-    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+    if (part.startsWith('**') && part.endsWith('**') && (part || '').length > 4) {
       return (
         <strong key={key} className="sa-strong">
           {part.slice(2, -2)}
         </strong>
       );
     }
-    if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+    if (part.startsWith('*') && part.endsWith('*') && (part || '').length > 2) {
       return (
         <em key={key} className="sa-em">
           {part.slice(1, -1)}
@@ -188,8 +192,10 @@ interface StructuredAnswerProps {
   animate?: boolean;
 }
 
+// Keeps the core answer readable while moving explicit grading rubrics into expandable details.
 export default function StructuredAnswer({ text, animate = false }: StructuredAnswerProps) {
-  const blocks = useMemo(() => parseBlocks(text), [text]);
+  const prompt = useMemo(() => splitPrompt(text), [text]);
+  const blocks = useMemo(() => parseBlocks(prompt.core), [prompt.core]);
 
   return (
     <div className="sa-root">
@@ -211,6 +217,7 @@ export default function StructuredAnswer({ text, animate = false }: StructuredAn
         );
       })}
 
+      {prompt.rubric && <details style={{ marginTop: 16 }}><summary style={{ cursor: 'pointer', color: '#b9c7e5', fontSize: 13 }}>Rubric / evaluation details</summary><p style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.7 }}>{prompt.rubric}</p></details>}
       <style>{`
         .sa-root :global(.sa-h2),
         .sa-root :global(.sa-h3) {
@@ -334,6 +341,7 @@ export default function StructuredAnswer({ text, animate = false }: StructuredAn
   );
 }
 
+// Renders one typed Markdown block as accessible semantic elements.
 function renderBlock(block: Block, key: string): ReactNode {
   switch (block.kind) {
     case 'heading':

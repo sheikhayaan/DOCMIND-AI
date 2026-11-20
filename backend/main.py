@@ -1,6 +1,7 @@
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 import os
 import threading
@@ -36,7 +37,7 @@ from models import (
     VitalsRequest,
 )
 from monitoring import capture_exception
-from query import answer_question, warm_models
+from query import answer_question, handle_upstream_error, warm_models
 from security import (
     ADMIN_EMAIL,
     INJECTION_BLOCK_SECONDS,
@@ -61,6 +62,9 @@ from security import (
     security_store,
     verify_recaptcha_token,
 )
+from apm.middleware import TelemetryFastAPI
+from apm.routes import admin_router, feedback_router
+from apm.runtime import apm
 
 
 @asynccontextmanager
@@ -70,11 +74,17 @@ async def lifespan(_app: FastAPI):
         raise RuntimeError("DOCUMENT_ENCRYPTION_KEY is required in production")
     # Load the embedding model (and pick a working Groq model) in the background
     # so the first upload and the first question do not pay the cold-start cost.
+    await apm.start()
     threading.Thread(target=warm_models, name="model-warmup", daemon=True).start()
-    yield
+    try:
+        yield
+    finally:
+        await apm.stop()
 
 
-app = FastAPI(title="RAG Chatbot API", version="1.0.0", lifespan=lifespan)
+app = TelemetryFastAPI(title="RAG Chatbot API", version="1.0.0", lifespan=lifespan)
+app.include_router(admin_router)
+app.include_router(feedback_router)
 
 allowed_origins = [
     "https://docmind.ai",
@@ -100,6 +110,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(dict.fromkeys(allowed_origins)),
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Session-ID", "X-Recaptcha-Token"],
@@ -123,12 +134,16 @@ async def log_requests(request: Request, call_next):
     return response
 
 
-# Converts unhandled server errors into the standard error response model.
+# Converts unhandled server errors into the standard error response model without masking upstream provider diagnostics.
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    print(f"{request.method} {request.url.path} 500")
+    print(f"{request.method} {request.url.path} 500: {exc}")
     capture_exception(exc)
-    error_response = ErrorResponse(error="Internal server error")
+    msg = str(exc).lower()
+    if any(k in msg for k in ["429", "rate_limit", "quota", "401", "invalid_api_key", "unauthorized", "503", "context_length_exceeded"]):
+        http_exc = handle_upstream_error(exc)
+        return JSONResponse(status_code=http_exc.status_code, content={"success": False, "data": None, "error": http_exc.detail})
+    error_response = ErrorResponse(error="Internal server error. Please retry or contact support.")
     return JSONResponse(status_code=500, content=error_response.model_dump())
 
 
@@ -143,10 +158,12 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     )
 
 
-# Converts request validation errors into the standard error response model.
+# Converts request validation errors into detailed actionable messages.
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    error_response = ErrorResponse(error="Request validation failed")
+    errors = [f"{err['loc'][-1]}: {err['msg']}" for err in exc.errors()]
+    error_message = "; ".join(errors) if errors else "Request validation failed"
+    error_response = ErrorResponse(error=error_message)
     return JSONResponse(status_code=422, content=error_response.model_dump())
 
 
@@ -482,7 +499,7 @@ async def query_document(request_body: QueryRequest, request: Request) -> QueryR
         doc_ids.append(sanitize_identifier(request_body.doc_id, "doc_id"))
     if request_body.session_id:
         session_id = sanitize_identifier(request_body.session_id, "session_id")
-        doc_ids.extend(session_store.get(session_id))
+        doc_ids.extend(await run_in_threadpool(session_store.get, session_id, user_id))
 
     doc_ids = list(dict.fromkeys(doc_ids))
     if not question or not doc_ids:
@@ -493,18 +510,24 @@ async def query_document(request_body: QueryRequest, request: Request) -> QueryR
         if document and document.get("ingest_status") != "ready":
             raise HTTPException(status_code=409, detail="Document is still processing")
 
+    result = None
     async for _ in limit_user_concurrency(user_id):
-        result = await run_in_threadpool(answer_question, question, doc_ids, request_body.history)
+        result = await run_in_threadpool(answer_question, question, doc_ids, request_body.history, request_body.image)
+    # Sessions count successful answers, not uploads, login tokens, or guessed interviews.
+    effective_session_id = request_body.session_id
+    if not effective_session_id or await run_in_threadpool(apm.store.is_completed, effective_session_id):
+        effective_session_id = await run_in_threadpool(create_session, doc_ids, user_id)
+    await run_in_threadpool(apm.store.record_answer, user_id, effective_session_id)
     pdf_limiter.mark_question(user_id, doc_ids)
     audit_logger.log("question_asked", user_id, client_ip, {"doc_ids": doc_ids, "message_length": len(question)})
-    result["session_id"] = request_body.session_id
+    result["session_id"] = effective_session_id
     result["error"] = None
     result["data"] = {
         "answer": result.get("answer"),
         "sources": result.get("sources", []),
         "doc_id": result.get("doc_id"),
         "doc_ids": result.get("doc_ids", []),
-        "session_id": request_body.session_id,
+        "session_id": effective_session_id,
         "confidence": result.get("confidence"),
             "confidence_score": result.get("confidence_score"),
             "answer_source": result.get("answer_source"),

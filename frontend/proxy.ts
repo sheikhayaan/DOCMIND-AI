@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
+// Generates a fresh CSP nonce for each document response.
 function createNonce(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   let binary = "";
@@ -41,7 +42,7 @@ function buildCsp(nonce: string): string {
 }
 
 /** Adds nonce-based CSP and defensive browser headers to document responses. */
-export function middleware(request: NextRequest): NextResponse {
+export function proxy(request: NextRequest): NextResponse {
   const nonce = createNonce();
   const csp = buildCsp(nonce);
   const requestHeaders = new Headers(request.headers);
@@ -57,7 +58,8 @@ export function middleware(request: NextRequest): NextResponse {
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   response.headers.set(
     "Permissions-Policy",
-    "camera=(), microphone=(), geolocation=(), payment=()",
+    // Voice input is same-origin and still requires an explicit browser permission grant.
+    "camera=(), microphone=(self), geolocation=(), payment=()",
   );
   response.headers.set("Cross-Origin-Opener-Policy", "same-origin");
   response.headers.set("Cross-Origin-Resource-Policy", "same-origin");

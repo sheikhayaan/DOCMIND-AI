@@ -40,11 +40,12 @@ export function listConversations(): StoredConversation[] {
       let payload: StoredPayload;
       try {
         payload = JSON.parse(raw) as StoredPayload;
+        if (!payload || typeof payload !== "object") continue;
       } catch {
         continue;
       }
 
-      const messages = Array.isArray(payload.messages) ? payload.messages : [];
+      const messages = Array.isArray(payload.messages) ? payload.messages.filter((message) => message && typeof message.content === "string") : [];
       if (!messages.length) continue;
 
       const firstQuestion = messages.find((message) => message.role === "user");
@@ -52,9 +53,9 @@ export function listConversations(): StoredConversation[] {
         typeof firstQuestion?.content === "string" ? firstQuestion.content.slice(0, 90) : "";
 
       items.push({
-        docId: key.slice(CHAT_STORAGE_PREFIX.length),
-        filename: payload.filename || "Untitled document",
-        docType: payload.docType || "general",
+        docId: key.slice((CHAT_STORAGE_PREFIX || "").length),
+        filename: typeof payload.filename === "string" ? payload.filename : "Untitled document",
+        docType: typeof payload.docType === "string" ? payload.docType : "general",
         updatedAt: typeof payload.updatedAt === "number" ? payload.updatedAt : 0,
         messageCount: messages.length,
         preview,

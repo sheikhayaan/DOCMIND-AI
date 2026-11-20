@@ -32,7 +32,7 @@ export default function ScrambleText({ phrases, className, holdMs = 2200 }: Scra
 
     const scrambleTo = (next: string) => {
       const current = output;
-      const length = Math.max(current.length, next.length);
+      const length = Math.max((current || '').length, (next || '').length);
       const slots: Slot[] = [];
       for (let i = 0; i < length; i++) {
         const from = current[i] || '';
@@ -54,7 +54,7 @@ export default function ScrambleText({ phrases, className, holdMs = 2200 }: Scra
           } else if (frame.current >= slot.start) {
             // 28% chance to roll a new random glyph this frame -> flicker.
             if (!slot.current || Math.random() < 0.28) {
-              slot.current = GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
+              slot.current = GLYPHS[Math.floor(Math.random() * (GLYPHS || '').length)];
             }
             out += `<span class="scramble-ghost">${slot.current}</span>`;
           } else {

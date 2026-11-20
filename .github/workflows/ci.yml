@@ -19,21 +19,26 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       - name: Run pytest
         # Tests are offline (no Groq/Pinecone/network calls), so they run in CI
-        # without any API keys. Dummy env values satisfy module-level config.
+        # without any live API keys. Dummy env values satisfy module-level config.
         env:
+          TESTING: "true"
           PINECONE_INDEX_NAME: ci-test-index
           GROQ_API_KEY: ci-dummy-key
           PINECONE_API_KEY: ci-dummy-key
+          AUTH_SECRET: ci-testing-auth-secret-signing-key-stable
+          ADMIN_ACCESS_TOKEN: ci-dummy-admin-token
+          ADMIN_EMAIL: admin@example.com
         run: python -m pytest tests/ -v
 
   frontend:
@@ -59,9 +64,12 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Lint
-        run: npx eslint app components lib
+        run: npx eslint app components lib proxy.ts
+
+      - name: Admin and mobile protocol tests
+        run: npm test
 
       - name: Build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8000
-        run: npx next build
+        run: npm run build

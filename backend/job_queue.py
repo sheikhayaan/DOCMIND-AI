@@ -14,6 +14,20 @@ from typing import Any
 from job_store import job_store
 from monitoring import capture_exception
 from storage import document_store
+from apm.common import setting
+from apm.incidents import incident_tracker
+
+_inline_jobs: dict[str, threading.Thread] = {}
+_inline_lock = threading.Lock()
+
+
+def drain_completed_jobs() -> int:
+    """Releases finished inline task handles without cancelling queued or active work."""
+    with _inline_lock:
+        finished = [key for key, thread in _inline_jobs.items() if not thread.is_alive()]
+        for key in finished:
+            del _inline_jobs[key]
+        return len(finished)
 
 
 class QueueUnavailableError(RuntimeError):
@@ -30,9 +44,7 @@ def _redis_connection() -> Any:
     import redis
 
     url = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
-    connection = redis.Redis.from_url(url, socket_timeout=3, socket_connect_timeout=3)
-    connection.ping()
-    return connection
+    return redis.Redis.from_url(url, socket_timeout=3, socket_connect_timeout=3)
 
 
 def _celery_app() -> Any:
@@ -64,14 +76,25 @@ def enqueue_pdf_job(
         else:
             from tasks import process_pdf_job
 
-            thread = threading.Thread(
-                target=process_pdf_job,
-                args=(identifier, doc_id, staging_name, user_id, filename),
-                name=f"ingest-{identifier[:8]}",
-                daemon=True,
-            )
-            thread.start()
+            drain_completed_jobs()
+            with _inline_lock:
+                limit = int(setting("INGESTION_INLINE_MAX_WORKERS", 4, 1, 32))
+                if len(_inline_jobs) >= limit:
+                    raise QueueUnavailableError("Inline ingestion capacity reached")
+                thread = threading.Thread(
+                    target=process_pdf_job,
+                    args=(identifier, doc_id, staging_name, user_id, filename),
+                    name=f"ingest-{identifier[:8]}",
+                    daemon=True,
+                )
+                _inline_jobs[identifier] = thread
+                try:
+                    thread.start()
+                except Exception:
+                    _inline_jobs.pop(identifier, None)
+                    raise
     except Exception as exc:
+        incident_tracker.record("QUEUE_UNAVAILABLE", "high", "/upload", "Ingestion queue could not accept work; active and durable tasks were not discarded.", 503)
         capture_exception(exc)
         job_store.set_failed(identifier, "Ingestion queue unavailable.")
         document_store.purge(staging_name)
@@ -98,7 +121,8 @@ def queue_is_healthy() -> bool:
     if queue_backend() != "celery":
         return True
     try:
-        _redis_connection().ping()
+        with _redis_connection() as connection:
+            connection.ping()
         return True
     except Exception:
         return False

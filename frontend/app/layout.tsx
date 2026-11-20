@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 
 import AuthGate from "@/components/AuthGate";
 import PageTransition from "@/components/PageTransition";
@@ -9,13 +8,6 @@ import "./globals.css";
 // Nonce-based CSP requires per-request rendering: a prerendered shell cannot
 // carry the request nonce that middleware generates.
 export const dynamic = "force-dynamic";
-
-const inter = Inter({
-  subsets: ["latin"],
-  display: "swap",
-  preload: true,
-  variable: "--font-inter",
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
@@ -46,7 +38,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} h-full bg-[#000000] antialiased`}
+      className="h-full bg-[#000000] antialiased"
     >
       <body className="noise flex min-h-full flex-col bg-[#000000]">
         <WebVitals />

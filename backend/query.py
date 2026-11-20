@@ -1,3 +1,4 @@
+from pathlib import Path
 import os
 import re
 import threading
@@ -15,8 +16,11 @@ from pinecone import Pinecone
 from ingest import DOC_METADATA, LOCAL_DOC_CHUNKS
 from observability import QueryTrace, extract_token_usage
 from rerank import rerank_chunks
+from apm.cache import document_stats_cache
+from apm.gateway import gateway
+from apm.incidents import incident_tracker, record_dependency_failure
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 _embeddings_model = None
 GREETINGS_PATTERN = re.compile(
@@ -41,6 +45,40 @@ OVERVIEW_PATTERN = re.compile(
     ),
     re.IGNORECASE,
 )
+
+
+from fastapi import HTTPException
+
+def handle_upstream_error(exc: Exception) -> HTTPException:
+    """Extracts human-actionable details from upstream provider failures."""
+    msg = str(exc)
+    lower = msg.lower()
+    if "429" in msg or "rate_limit" in lower or "insufficient_quota" in lower or "quota" in lower or "resource_exhausted" in lower:
+        return HTTPException(
+            status_code=429,
+            detail="Upstream AI provider rate limit or credit quota exhausted. Add credits or adjust limits at https://console.groq.com/settings/limits",
+        )
+    if "401" in msg or "invalid_api_key" in lower or "invalid api key" in lower or "unauthorized" in lower:
+        return HTTPException(
+            status_code=401,
+            detail="Upstream AI provider authentication failed: Invalid or revoked API key. Verify GROQ_API_KEY.",
+        )
+    if "403" in msg or "forbidden" in lower or "permission_denied" in lower:
+        return HTTPException(
+            status_code=403,
+            detail="Upstream AI provider access forbidden. Check permissions for your API credentials.",
+        )
+    if "413" in msg or "payload too large" in lower or "context_length_exceeded" in lower:
+        return HTTPException(
+            status_code=413,
+            detail="Prompt length or file payload exceeds the upstream model's maximum context window.",
+        )
+    if "503" in msg or "connection error" in lower or "timeout" in lower or "service unavailable" in lower:
+        return HTTPException(
+            status_code=503,
+            detail="Upstream AI provider is temporarily unreachable or timed out. Please retry shortly.",
+        )
+    return HTTPException(status_code=502, detail="Upstream provider request failed. Please retry shortly or contact support.")
 
 
 def is_greeting(query: str) -> bool:
@@ -81,7 +119,7 @@ FOLLOW_UP_PATTERN = re.compile(
     re.IGNORECASE,
 )
 # Cached document stats so a legacy document is only scanned in Pinecone once.
-_DOC_STATS_CACHE: dict[str, dict] = {}
+_DOC_STATS_CACHE = document_stats_cache
 
 
 def extract_page_numbers(question: str, max_pages: int = 12) -> list[int]:
@@ -256,36 +294,59 @@ REWRITE_SYSTEM_PROMPT = (
 # Ordered list of Groq models to try — most capable first, then faster fallbacks.
 # Verified available on the account 2026-08-21; each returns clean answer content
 # (reasoning/think traces excluded so RAG answers stay clean).
-GROQ_MODEL_CANDIDATES = [
-    "openai/gpt-oss-120b",
-    "openai/gpt-oss-20b",
-    "groq/compound",
-    "groq/compound-mini",
+GROQ_MODEL_CANDIDATES = gateway.models
+
+GROQ_VISION_MODELS = [
+    "llama-3.2-11b-vision-preview",
+    "llama-3.2-90b-vision-preview",
 ]
 _cached_groq_model: str | None = None
 
 
-def get_groq_client(max_tokens: int = 1000) -> ChatGroq:
-    """Returns a ChatGroq client using the first available model on this account."""
-    global _cached_groq_model
-    api_key = os.getenv("GROQ_API_KEY", "")
-    if _cached_groq_model:
-        return ChatGroq(model=_cached_groq_model, api_key=api_key, temperature=0.2, max_tokens=max_tokens)
-    for model in GROQ_MODEL_CANDIDATES:
-        try:
-            client = ChatGroq(model=model, api_key=api_key, temperature=0, max_tokens=5)
-            client.invoke([{"role": "user", "content": "Hi"}])
-            _cached_groq_model = model
-            print(f"Groq model selected: {model}")
-            return ChatGroq(model=model, api_key=api_key, temperature=0.2, max_tokens=max_tokens)
-        except Exception as exc:
-            msg = str(exc)
-            if "Connection error" in msg or "timeout" in msg.lower():
-                # Network issue — skip further attempts to avoid long delays
-                break
-            print(f"Groq model {model} unavailable: {msg[:80]}")
-    raise RuntimeError("No available Groq model found. Check your GROQ_API_KEY and plan.")
+def make_groq_client(model: str, max_tokens: int = 1000) -> ChatGroq:
+    """Creates a timeout-bounded client with retries owned by the circuit-breaker gateway."""
+    return ChatGroq(model=model, api_key=os.getenv("GROQ_API_KEY", ""), temperature=0.2,
+                    max_tokens=max_tokens, timeout=10, max_retries=0)
 
+
+def get_groq_client(max_tokens: int = 1000) -> ChatGroq:
+    """Selects the currently available primary or fallback without a paid discovery request."""
+    return make_groq_client(gateway.preferred_model(), max_tokens)
+
+
+def probe_groq_model(model: str) -> object:
+    """Verifies a recovering provider with one minimal real request after circuit backoff."""
+    return make_groq_client(model, max_tokens=1).invoke([{"role": "user", "content": "Hi"}])
+
+
+def offline_bank_available() -> bool:
+    """Checks whether grounded local extracts exist without exposing their contents."""
+    return bool(LOCAL_DOC_CHUNKS)
+
+
+gateway.configure(probe_groq_model, offline_bank_available)
+
+
+def get_groq_vision_client(max_tokens: int = 1000) -> ChatGroq:
+    """Returns a vision-capable ChatGroq client for multimodal inspection."""
+    api_key = os.getenv("GROQ_API_KEY", "")
+    for model in GROQ_VISION_MODELS:
+        try:
+            return make_groq_client(model, max_tokens)
+        except Exception:
+            continue
+    return get_groq_client(max_tokens=max_tokens)
+
+
+def _resolve_model_name() -> str:
+    """Uses cached snapshot directory directly to avoid offline network timeout delays."""
+    default_name = "sentence-transformers/all-MiniLM-L6-v2"
+    hub_cache = Path(os.path.expanduser("~/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots"))
+    if hub_cache.is_dir():
+        snapshots = list(hub_cache.iterdir())
+        if snapshots and snapshots[0].is_dir():
+            return str(snapshots[0])
+    return default_name
 
 _embeddings_lock = threading.Lock()
 
@@ -300,7 +361,7 @@ def get_embeddings():
         with _embeddings_lock:
             if _embeddings_model is None:
                 _embeddings_model = HuggingFaceEmbeddings(
-                    model_name="sentence-transformers/all-MiniLM-L6-v2",
+                    model_name=_resolve_model_name(),
                     model_kwargs={"device": "cpu"},
                     encode_kwargs={"normalize_embeddings": True},
                 )
@@ -398,16 +459,13 @@ def lexical_relevance(question: str, chunks: list) -> float:
 
 
 def invoke_with_retry(client: ChatGroq, messages: list[dict], attempts: int = 2):
-    """Invokes the LLM with one short retry so a transient provider blip is invisible."""
-    last_error: Exception | None = None
-    for attempt in range(attempts):
-        try:
-            return client.invoke(messages)
-        except Exception as exc:  # noqa: BLE001 - provider errors vary by SDK version
-            last_error = exc
-            if attempt + 1 < attempts:
-                time.sleep(0.6 * (attempt + 1))
-    raise last_error if last_error else RuntimeError("LLM invocation failed")
+    """Uses a real fallback gateway with bounded timeouts and per-model backoff."""
+    # Preserve token budgets when moving a request to the fallback model.
+    def fallback(model: str) -> ChatGroq:
+        """Creates a fallback client with the original request's generation budget."""
+        return make_groq_client(model, getattr(client, "max_tokens", None) or 1000)
+
+    return gateway.invoke(client, messages, fallback, attempts)
 
 
 def generate_general_answer(
@@ -440,6 +498,8 @@ def generate_general_answer(
 
 def warm_models() -> None:
     """Loads the embedding model and selects a Groq model before the first user request."""
+    if os.getenv("PYTEST_CURRENT_TEST") or os.getenv("TESTING") == "true":
+        return
     try:
         get_embeddings().embed_query("warmup")
         print("Embedding model warmed")
@@ -459,8 +519,9 @@ def warm_models() -> None:
             print(f"Vector store warmup skipped: {exc}")
     if os.getenv("GROQ_API_KEY"):
         try:
-            get_groq_client(max_tokens=5)
-            print("Groq model warmed")
+            client = get_groq_client(max_tokens=1)
+            invoke_with_retry(client, [{"role": "user", "content": "Hi"}])
+            print("Groq gateway warmed and verified")
         except Exception as exc:  # noqa: BLE001 - warmup must never block startup
             print(f"Groq warmup skipped: {exc}")
 
@@ -471,9 +532,11 @@ def sanitize_history(history: list[dict] | None) -> list[dict]:
 
     sanitized_messages = []
     for message in history:
+        if not isinstance(message, dict):
+            continue
         role = message.get("role")
         content = message.get("content")
-        if role not in {"user", "assistant"} or not isinstance(content, str):
+        if not isinstance(role, str) or role not in {"user", "assistant"} or not isinstance(content, str):
             continue
         if not content.strip():
             continue
@@ -510,7 +573,7 @@ def rewrite_query(original_query: str) -> str:
 
     try:
         client = get_groq_client(max_tokens=100)
-        response = client.invoke(
+        response = invoke_with_retry(client,
             [
                 {"role": "system", "content": REWRITE_SYSTEM_PROMPT},
                 {"role": "user", "content": original_query},
@@ -623,6 +686,7 @@ def collect_overview_chunks(
                 for chunk in results:
                     add_chunk(chunk, doc_id)
             except Exception as exc:
+                record_dependency_failure("pinecone", exc, "/query")
                 print(f"Warning: overview MMR retrieval failed for doc_id {doc_id}: {exc}")
                 try:
                     scored = vector_store.similarity_search_by_vector_with_score(
@@ -719,6 +783,7 @@ def _scan_vector_page_stats(doc_id: str, index_name: str) -> tuple[int, int]:
                     continue
         return max_page, len(vector_ids)
     except Exception as exc:
+        record_dependency_failure("pinecone", exc, "/query")
         print(f"Warning: document stats scan failed for {doc_id}: {exc}")
         return 0, 0
 
@@ -731,7 +796,12 @@ def get_document_stats(
     """Returns filename, page count, and chunk count, scanning legacy vectors once."""
     cached = _DOC_STATS_CACHE.get(doc_id)
     if cached:
-        return cached
+        if (isinstance(cached, dict) and type(cached.get("page_count")) is int
+                and type(cached.get("chunk_count")) is int
+                and cached["page_count"] > 0 and cached["chunk_count"] >= 0
+                and (cached.get("filename") is None or isinstance(cached.get("filename"), str))):
+            return cached
+        incident_tracker.record("TRANSIENT_CACHE_CORRUPTION", "high", "/query", "Disposable document metadata failed shape validation and is being recomputed.")
 
     meta = DOC_METADATA.get(doc_id, {})
     filename = meta.get("filename")
@@ -869,6 +939,7 @@ def collect_page_chunks(
                     add_chunk(chunk, doc_id)
                     found = True
             except Exception as exc:
+                record_dependency_failure("pinecone", exc, "/query")
                 print(f"Warning: page {page} retrieval failed for doc_id {doc_id}: {exc}")
 
         # Some index configurations reject metadata filters. Fall back to a broad
@@ -932,6 +1003,7 @@ def answer_question(
     question: str,
     doc_ids: list[str] | str,
     history: list[dict] | None = None,
+    image: str | None = None,
 ) -> dict:
     index_name = os.getenv("PINECONE_INDEX_NAME")
     if not index_name:
@@ -1024,6 +1096,7 @@ def answer_question(
         try:
             vector_store = PineconeVectorStore(index_name=index_name, embedding=embeddings)
         except Exception as exc:  # noqa: BLE001 - provider errors vary by SDK version
+            record_dependency_failure("pinecone", exc, "/query")
             print(f"Warning: vector store unavailable ({exc}); using local chunks")
             vector_store = None
 
@@ -1119,6 +1192,7 @@ def answer_question(
                     chunk.metadata["_question_embedding"] = question_embedding
                     vector_results.append(chunk)
             except Exception as exc:
+                record_dependency_failure("pinecone", exc, "/query")
                 print(f"Warning: Pinecone similarity search failed for doc_id {doc_id}: {exc}")
 
         # Fallback to instant local memory vector comparison
@@ -1336,16 +1410,53 @@ def answer_question(
             )
 
         try:
-            client = get_groq_client(max_tokens=1000)
-            messages = [
-                {"role": "system", "content": system_prompt},
-                *sanitize_history(history),
-                {"role": "user", "content": user_message},
-            ]
-            response = invoke_with_retry(client, messages)
-            answer = get_llm_content(response)
-            prompt_tokens, completion_tokens = extract_token_usage(response)
+            if image:
+                try:
+                    vision_client = get_groq_vision_client(max_tokens=1000)
+                    vision_messages = [
+                        {"role": "system", "content": system_prompt},
+                        *sanitize_history(history),
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": user_message},
+                                {"type": "image_url", "image_url": {"url": image}},
+                            ],
+                        },
+                    ]
+                    response = invoke_with_retry(vision_client, vision_messages)
+                    answer = get_llm_content(response)
+                    prompt_tokens, completion_tokens = extract_token_usage(response)
+                except Exception as vision_err:
+                    v_msg = str(vision_err).lower()
+                    if any(k in v_msg for k in ["429", "rate_limit", "quota", "401", "invalid_api_key", "unauthorized"]):
+                        raise handle_upstream_error(vision_err)
+                    # Smart auto-routing: fallback to text client if vision unsupported
+                    client = get_groq_client(max_tokens=1000)
+                    messages = [
+                        {"role": "system", "content": system_prompt},
+                        *sanitize_history(history),
+                        {"role": "user", "content": user_message},
+                    ]
+                    response = invoke_with_retry(client, messages)
+                    answer = get_llm_content(response)
+                    prompt_tokens, completion_tokens = extract_token_usage(response)
+            else:
+                client = get_groq_client(max_tokens=1000)
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    *sanitize_history(history),
+                    {"role": "user", "content": user_message},
+                ]
+                response = invoke_with_retry(client, messages)
+                answer = get_llm_content(response)
+                prompt_tokens, completion_tokens = extract_token_usage(response)
+        except HTTPException:
+            raise
         except Exception as exc:
+            msg = str(exc).lower()
+            if any(k in msg for k in ["429", "rate_limit", "quota", "401", "invalid_api_key", "unauthorized", "insufficient_quota"]):
+                raise handle_upstream_error(exc)
             print(f"Warning: Groq LLM call failed, generating grounded local answer: {exc}")
             best_chunk = chunks[0].page_content if chunks else ""
             answer = f"Based on the retrieved context (page {page_number(chunks[0], 1)}):\n\n"

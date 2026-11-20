@@ -10,8 +10,25 @@ from ingest import ingest_pdf, delete_doc, LOCAL_DOC_CHUNKS, DOC_METADATA
 from query import answer_question, is_greeting
 
 
-def test_user_document_isolation():
+def test_user_document_isolation(monkeypatch):
     """Verifies that User A's document chunks can never leak into User B's context."""
+    # Isolation tests must not download native models or reach a live provider;
+    # retrieval/reranking behavior is covered separately in test_query/test_pipeline.
+    class OfflineEmbeddings:
+        """Supplies deterministic vectors for the real local-retrieval branch."""
+
+        def embed_query(self, _text):
+            """Returns the same unit vector without loading a native transformer."""
+            return [1.0, 0.0, 0.0]
+
+    def offline_provider(*_args, **_kwargs):
+        """Forces grounded fallback without calling Pinecone or Groq during an isolation test."""
+        raise RuntimeError("Offline test provider")
+
+    monkeypatch.setattr("query.get_embeddings", lambda: OfflineEmbeddings())
+    monkeypatch.setattr("query.PineconeVectorStore", offline_provider)
+    monkeypatch.setattr("query.get_groq_client", offline_provider)
+    monkeypatch.setattr("rerank.get_reranker", lambda: None)
     user_a = "usr_userA_123"
     user_b = "usr_userB_456"
     doc_a = "doc_A_salary_secret"
@@ -75,9 +92,25 @@ def test_pdf_magic_byte_validation():
     assert res_pdf["safe_filename"] == "report.pdf"
 
 
-def test_delete_purges_document_data():
+def test_delete_purges_document_data(monkeypatch):
     """Verifies that deleting a document purges all metadata, chunks, and cached vectors."""
     doc_id = "doc_to_delete_999"
+    deleted = []
+
+    class OfflineIndex:
+        """Records the namespace deletion without opening a network connection."""
+
+        def Index(self, _name):
+            """Mimics selecting an index on the Pinecone client."""
+            return self
+
+        def delete(self, *, delete_all, namespace):
+            """Records the actual deletion arguments for verification."""
+            deleted.append((delete_all, namespace))
+
+    monkeypatch.setenv("PINECONE_API_KEY", "offline-test-key")
+    monkeypatch.setenv("PINECONE_INDEX_NAME", "offline-index")
+    monkeypatch.setattr("ingest.Pinecone", lambda **_kwargs: OfflineIndex())
 
     class DummyChunk:
         def __init__(self, content):
@@ -92,6 +125,7 @@ def test_delete_purges_document_data():
 
     assert doc_id not in LOCAL_DOC_CHUNKS
     assert doc_id not in DOC_METADATA
+    assert deleted == [(True, doc_id)]
 
 
 def test_conversational_greeting_courtesy():

@@ -14,11 +14,13 @@ const PASSWORD_MIN_LENGTH = 8;
 const GUEST_PDF_LIMIT = 2;
 const ACCOUNT_PDF_LIMIT = 4;
 
+// Describes password strength without dereferencing an absent string.
 function passwordGloss(password: string): string {
-  if (password.length < PASSWORD_MIN_LENGTH) {
-    return `${PASSWORD_MIN_LENGTH - password.length} characters needed`;
+  const length = (password || '').length;
+  if (length < PASSWORD_MIN_LENGTH) {
+    return `${PASSWORD_MIN_LENGTH - length} characters needed`;
   }
-  if (password.length >= 12 || /[^a-zA-Z0-9]/.test(password)) return 'Strong password';
+  if (length >= 12 || /[^a-zA-Z0-9]/.test(password || '')) return 'Strong password';
   if (/[a-zA-Z]/.test(password) && /[0-9]/.test(password)) return 'Good password';
   return 'Fair password';
 }
@@ -59,7 +61,7 @@ export default function LoginPage() {
       setError('Please enter your email and password.');
       return;
     }
-    if (isSignUp && password.length < PASSWORD_MIN_LENGTH) {
+    if (isSignUp && (password || '').length < PASSWORD_MIN_LENGTH) {
       setError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`);
       return;
     }

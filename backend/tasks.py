@@ -19,6 +19,7 @@ from query import warm_models
 from security import antivirus_scanner, audit_logger, pdf_limiter, security_store
 from security import AntivirusUnavailableError, MalwareDetectedError
 from storage import document_store
+from apm.incidents import record_dependency_failure
 
 
 def _advance(job_id: str, doc_id: str, stage: str) -> None:
@@ -100,6 +101,7 @@ def process_pdf_job(
     except (PDFSanitizationError, AntivirusUnavailableError):
         _fail(job_id, doc_id, "File failed security verification.", current_stage)
     except Exception as exc:
+        record_dependency_failure("ingestion-provider", exc, "/upload")
         capture_exception(exc)
         _fail(job_id, doc_id, "Document processing failed.", current_stage)
     finally:

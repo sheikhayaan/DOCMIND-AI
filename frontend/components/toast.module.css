@@ -1,0 +1,30 @@
+.viewport {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: max(24px, env(safe-area-inset-bottom, 0px));
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, calc(100vw - 32px));
+  /* Notifications must never become a flex sibling or intercept Submit/Next/Listen taps. */
+  pointer-events: none;
+}
+
+.toast {
+  padding: 12px 16px;
+  border: 1px solid;
+  border-radius: 12px;
+  background: rgba(10, 19, 34, .96);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, .35);
+  font: 13px/1.55 system-ui, sans-serif;
+  overflow-wrap: anywhere;
+}
+
+.success { color: #a0ebcc; border-color: rgba(90, 215, 170, .45); }
+.error { color: #ffc0c9; border-color: rgba(250, 113, 140, .5); }
+
+@media (max-width: 600px) {
+  .viewport { bottom: calc(160px + env(safe-area-inset-bottom, 0px)); }
+}

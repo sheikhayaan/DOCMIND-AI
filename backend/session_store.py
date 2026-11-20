@@ -12,6 +12,10 @@ import time
 import uuid
 from pathlib import Path
 from threading import Lock
+from contextlib import AbstractContextManager
+
+from fastapi import HTTPException
+from apm.database import get_pool
 
 
 class SessionStore:
@@ -24,12 +28,9 @@ class SessionStore:
         self.lock = Lock()
         self._init_db()
 
-    def _connect(self) -> sqlite3.Connection:
-        """Opens a WAL-mode SQLite connection with a busy timeout."""
-        conn = sqlite3.connect(self.db_path, timeout=10, check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        return conn
+    def _connect(self) -> AbstractContextManager[sqlite3.Connection]:
+        """Leases an instrumented WAL connection and returns it after use."""
+        return get_pool(self.db_path, "sessions").connection(rows=False)
 
     def _init_db(self) -> None:
         """Creates the sessions table used by every API worker."""
@@ -57,13 +58,15 @@ class SessionStore:
             )
         return session_id
 
-    def get(self, session_id: str) -> list[str]:
-        """Returns the document ids for a session, or an empty list when absent."""
+    def get(self, session_id: str, user_id: str | None = None) -> list[str]:
+        """Returns live documents and enforces session ownership when a caller is supplied."""
         with self.lock, self._connect() as conn:
             row = conn.execute(
-                "SELECT doc_ids FROM query_sessions WHERE session_id = ?", (session_id,)
+                "SELECT doc_ids, user_id, created_at FROM query_sessions WHERE session_id = ?", (session_id,)
             ).fetchone()
-        if not row:
+        if not row or (user_id is not None and (row[1] != user_id or row[2] < time.time() - 7 * 86400)):
+            if user_id is not None:
+                raise HTTPException(status_code=404, detail="Session not found")
             return []
         try:
             value = json.loads(row[0])

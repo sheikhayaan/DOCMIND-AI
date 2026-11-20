@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useSyncExternalStore } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, Sun, Moon, FileText } from 'lucide-react';
@@ -12,13 +12,54 @@ const NAV_LINKS = [
   { label: 'Technology', id: 'technology' },
 ];
 
+const THEME_CHANGED_EVENT = 'docmind:theme-changed';
+
+// Reads persisted theme state without causing a server/client hydration mismatch.
+function readDarkTheme(): boolean {
+  try { return localStorage.getItem('docmind_theme') !== 'light'; }
+  catch { return document.documentElement.getAttribute('data-theme') !== 'light'; }
+}
+
+// Uses the same initial dark theme for server rendering and hydration.
+function serverDarkTheme(): boolean { return true; }
+
+// Subscribes the theme toggle to storage and same-tab theme changes.
+function subscribeTheme(listener: () => void): () => void {
+  window.addEventListener('storage', listener);
+  window.addEventListener(THEME_CHANGED_EVENT, listener);
+  return () => { window.removeEventListener('storage', listener); window.removeEventListener(THEME_CHANGED_EVENT, listener); };
+}
+
 // Main navigation component with scroll detection, mobile menu, and theme toggle
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [dark, setDark] = useState(true);
+  const dark = useSyncExternalStore(subscribeTheme, readDarkTheme, serverDarkTheme);
+
+  // Synchronizes the document with the external theme store without effect-driven state updates.
+  useEffect(() => {
+    if (dark) document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', 'light');
+  }, [dark]);
+
+  // Toggles between dark and light themes while preserving the existing stored preference.
+  const toggleTheme = () => {
+    const nextDark = !dark;
+    try {
+      if (!nextDark) {
+        document.documentElement.setAttribute('data-theme', 'light');
+        localStorage.setItem('docmind_theme', 'light');
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+        localStorage.setItem('docmind_theme', 'dark');
+      }
+    } catch {
+      // LocalStorage unavailable
+    }
+    window.dispatchEvent(new Event(THEME_CHANGED_EVENT));
+  };
 
   // Detect scroll position to apply backdrop blur
   useEffect(() => {
@@ -109,7 +150,7 @@ export default function Navbar() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {/* Theme toggle */}
           <button
-            onClick={() => setDark(!dark)}
+            onClick={toggleTheme}
             className="nav-theme"
             style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.55)', cursor: 'pointer', padding: '6px', borderRadius: '8px', transition: 'color 0.2s, background 0.2s', display: 'flex' }}
             onMouseEnter={e => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}

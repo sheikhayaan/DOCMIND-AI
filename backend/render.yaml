@@ -1,7 +1,8 @@
 services:
   - type: web
-    name: rag-chatbot-api
+    name: docmind-ai-backend
     runtime: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --no-server-header
     envVars:
@@ -15,15 +16,15 @@ services:
         value: production
       - key: TRUSTED_PROXY_HOPS
         value: "1"
+      - key: CLAMAV_REQUIRED
+        value: "false"
       - key: AUTH_SECRET
-        sync: false
+        generateValue: true
+      - key: DOCUMENT_ENCRYPTION_KEY
+        generateValue: true
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_ACCESS_TOKEN
+        generateValue: true
+      - key: FRONTEND_URL
         sync: false
-      - key: SECURITY_DB_PATH
-        value: /var/data/security.sqlite3
-    disk:
-      name: docmind-security-data
-      mountPath: /var/data
-      sizeGB: 1

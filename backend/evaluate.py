@@ -1,3 +1,4 @@
+from pathlib import Path
 """RAG evaluation harness — LLM-as-judge quality metrics.
 
 Runs a set of evaluation cases through the live retrieval+generation pipeline
@@ -31,7 +32,7 @@ import time
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from langchain_groq import ChatGroq
 

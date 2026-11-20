@@ -89,10 +89,40 @@ class QueryRequest(BaseModel):
     """Request body for asking a question about an uploaded document."""
 
     question: str = Field(..., min_length=1, max_length=4000)
-    doc_ids: list[str] = Field(default_factory=list)
-    doc_id: str | None = None
-    session_id: str | None = None
-    history: list[dict] = Field(default_factory=list)
+    doc_ids: list[str] = Field(default_factory=list, max_length=5)
+    doc_id: str | None = Field(default=None, max_length=100)
+    session_id: str | None = Field(default=None, max_length=100)
+    history: list[dict] = Field(default_factory=list, max_length=16)
+    image: str | None = Field(default=None, max_length=15000000)
+
+    @field_validator("history")
+    @classmethod
+    def validate_history(cls, value: list[dict]) -> list[dict]:
+        """Bounds untrusted history strings and rejects non-conversation roles before generation."""
+        result = []
+        for message in value:
+            content = message.get("content")
+            role = message.get("role")
+            if not isinstance(role, str) or role not in {"user", "assistant"} or not isinstance(content, str):
+                raise ValueError("History requires user/assistant messages with string content")
+            if len(content) > 4000:
+                raise ValueError("History messages cannot exceed 4000 characters")
+            result.append({"role": role, "content": content.replace("\x00", "").strip()})
+        return result[-8:]
+
+    @field_validator("image")
+    @classmethod
+    def validate_image(cls, value: str | None) -> str | None:
+        """Validates that optional multimodal image payloads are supported data URLs."""
+        if not value:
+            return None
+        clean_val = value.strip()
+        if not clean_val.startswith((
+            "data:image/png;base64,", "data:image/jpeg;base64,",
+            "data:image/jpg;base64,", "data:image/webp;base64,",
+        )):
+            raise ValueError("Image must be a PNG, JPEG, or WebP data URL")
+        return clean_val
 
     @field_validator("question")
     @classmethod
@@ -121,7 +151,7 @@ class QueryRequest(BaseModel):
 class SessionRequest(BaseModel):
     """Request body for creating an in-memory document session."""
 
-    doc_ids: list[str]
+    doc_ids: list[str] = Field(min_length=1, max_length=5)
 
     @field_validator("doc_ids")
     @classmethod
