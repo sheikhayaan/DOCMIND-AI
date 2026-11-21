@@ -1515,6 +1515,14 @@ def answer_question(
         # the PDF supports it.
         if confidence_score < 0.20:
             trace.set_retrieval(confidence=0.85, confidence_level="general")
+            general_news_items: list[dict[str, str]] = []
+            try:
+                from news_service import detect_news_intent, fetch_latest_news
+                if detect_news_intent(question):
+                    general_news_items = fetch_latest_news(query=question, max_items=3)
+            except Exception:
+                pass
+
             try:
                 answer, prompt_tokens, completion_tokens = generate_general_answer(
                     question,
@@ -1547,6 +1555,7 @@ def answer_question(
                 "confidence": "high",
                 "confidence_score": 0.85,
                 "answer_source": "general",
+                "news_sources": general_news_items,
             }
 
         context = "\n\n".join(
