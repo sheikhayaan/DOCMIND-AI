@@ -92,6 +92,12 @@ class AdminStore:
                        ON CONFLICT(session_id) DO UPDATE SET stars = excluded.stars, verified = 1, created_at = excluded.created_at""",
                     (session_id, user_id, stars, now),
                 )
+                if stars >= 4:
+                    try:
+                        from learning import learning_store
+                        learning_store.promote_session_to_memory(session_id, stars)
+                    except Exception:
+                        pass
             review = conn.execute("SELECT stars, verified FROM session_reviews WHERE session_id = ? AND user_id = ? AND verified = 1", (session_id, user_id)).fetchone()
         return SessionFeedback(sessionId=session_id, completed=complete or stars is not None or session["completed_at"] is not None, stars=int(review["stars"]) if review else None, verified=bool(review))
 

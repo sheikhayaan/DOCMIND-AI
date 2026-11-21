@@ -40,7 +40,10 @@ class LLMGateway:
 
     def __init__(self, models: list[str] | None = None, tracker: IncidentTracker = incident_tracker, clock: Callable[[], float] = time.monotonic) -> None:
         """Creates process-local breakers without making a network call at import time."""
-        configured = models or [os.getenv("GROQ_PRIMARY_MODEL", "qwen/qwen3.8-27b"), *os.getenv("GROQ_FALLBACK_MODELS", "openai/gpt-oss-120b,openai/gpt-oss-20b,llama-3.1-8b-instant").split(",")]
+        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+        default_primary = os.getenv("LLM_PRIMARY_MODEL") or os.getenv("GROQ_PRIMARY_MODEL") or ("gemini-2.5-flash" if gemini_key else "qwen/qwen3.8-27b")
+        default_fallbacks = os.getenv("LLM_FALLBACK_MODELS") or os.getenv("GROQ_FALLBACK_MODELS") or ("qwen/qwen3.8-27b,openai/gpt-oss-120b,gemini-2.5-flash" if gemini_key else "gemini-2.5-flash,openai/gpt-oss-120b,openai/gpt-oss-20b")
+        configured = models or [default_primary, *default_fallbacks.split(",")]
         self.models = list(dict.fromkeys(model.strip() for model in configured if model.strip()))[:5]
         self.states = {model: Circuit() for model in self.models}
         self.lock = threading.RLock()
@@ -51,7 +54,7 @@ class LLMGateway:
         self.offline = False
         self.probe_model: Callable[[str], object] | None = None
         self.offline_available: Callable[[], bool] = lambda: False
-        self.is_configured: Callable[[], bool] = lambda: bool(os.getenv("GROQ_API_KEY", "").strip())
+        self.is_configured: Callable[[], bool] = lambda: bool(os.getenv("GROQ_API_KEY", "").strip() or os.getenv("GEMINI_API_KEY", "").strip())
 
     def configure(self, probe: Callable[[str], object], offline_available: Callable[[], bool]) -> None:
         """Registers real provider probes and a read-only check for grounded local documents."""

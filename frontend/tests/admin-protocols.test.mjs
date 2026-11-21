@@ -45,6 +45,8 @@ test('every protected native JSON request includes bearer, content type, and cro
   await api.executeSelfHealing('incident-1');
   await api.finishSession('session-1', null);
   await api.finishSession('session-1', 4);
+  await api.getLearningStats();
+  await api.consolidateLearning();
   for (const { init } of calls) {
     assert.equal(init.credentials, 'same-origin');
     assert.equal(init.headers.Authorization, 'Bearer signed-test-token');

@@ -3,6 +3,9 @@ import os
 import re
 import threading
 import time
+import urllib.request
+import json
+from typing import Any
 
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
@@ -303,8 +306,90 @@ GROQ_VISION_MODELS = [
 _cached_groq_model: str | None = None
 
 
-def make_groq_client(model: str, max_tokens: int = 1000) -> ChatGroq:
+class GeminiResponse:
+    """Carries generated text and token counts in LangChain-compatible structure."""
+
+    def __init__(self, content: str, prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
+        self.content = content
+        self.response_metadata = {
+            "token_usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+            }
+        }
+        self.usage_metadata = {
+            "input_tokens": prompt_tokens,
+            "output_tokens": completion_tokens,
+        }
+
+
+class GeminiChatClient:
+    """Lightweight LangChain-compatible client for Google Gemini REST API."""
+
+    def __init__(
+        self,
+        model: str = "gemini-2.5-flash",
+        api_key: str | None = None,
+        max_tokens: int = 1000,
+        temperature: float = 0.2,
+    ) -> None:
+        self.model_name = model
+        self.api_key = (api_key or os.getenv("GEMINI_API_KEY", "")).strip()
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+
+    def invoke(self, messages: list[dict]) -> GeminiResponse:
+        """Executes a completion request using the Google Gemini REST API."""
+        if not self.api_key:
+            raise RuntimeError("GEMINI_API_KEY is not configured")
+
+        system_instruction = ""
+        contents = []
+        for m in messages:
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            if role == "system":
+                system_instruction += (content + "\n\n")
+            elif role in {"user", "human"}:
+                contents.append({"role": "user", "parts": [{"text": content}]})
+            elif role in {"assistant", "ai"}:
+                contents.append({"role": "model", "parts": [{"text": content}]})
+
+        if not contents:
+            contents.append({"role": "user", "parts": [{"text": "Hello"}]})
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
+        payload = {
+            "contents": contents,
+            "generationConfig": {
+                "temperature": self.temperature,
+                "maxOutputTokens": self.max_tokens,
+            },
+        }
+        if system_instruction.strip():
+            payload["systemInstruction"] = {"parts": [{"text": system_instruction.strip()}]}
+
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+
+        candidate = data.get("candidates", [{}])[0]
+        text = ""
+        parts = candidate.get("content", {}).get("parts", [])
+        if parts:
+            text = parts[0].get("text", "")
+
+        usage = data.get("usageMetadata", {})
+        prompt_tokens = usage.get("promptTokenCount", 0)
+        completion_tokens = usage.get("candidatesTokenCount", 0)
+        return GeminiResponse(text, prompt_tokens, completion_tokens)
+
+
+def make_groq_client(model: str, max_tokens: int = 1000) -> object:
     """Creates a timeout-bounded client with retries owned by the circuit-breaker gateway."""
+    if model.startswith("gemini-") or "gemini" in model.lower():
+        return GeminiChatClient(model=model, max_tokens=max_tokens)
     return ChatGroq(model=model, api_key=os.getenv("GROQ_API_KEY", ""), temperature=0.2,
                     max_tokens=max_tokens, timeout=10, max_retries=0)
 
@@ -458,10 +543,10 @@ def lexical_relevance(question: str, chunks: list) -> float:
     return best
 
 
-def invoke_with_retry(client: ChatGroq, messages: list[dict], attempts: int = 2):
+def invoke_with_retry(client: Any, messages: list[dict], attempts: int = 2):
     """Uses a real fallback gateway with bounded timeouts and per-model backoff."""
     # Preserve token budgets when moving a request to the fallback model.
-    def fallback(model: str) -> ChatGroq:
+    def fallback(model: str) -> Any:
         """Creates a fallback client with the original request's generation budget."""
         return make_groq_client(model, getattr(client, "max_tokens", None) or 1000)
 
@@ -1341,7 +1426,12 @@ def answer_question(
         fused = reciprocal_rank_fusion(vector_results, keyword_results)
         trace.mark("fusion", fused_count=len(fused))
 
-        chunks = rerank_chunks(rewritten_query, fused, top_k=4)
+        try:
+            from learning import learning_store
+            adaptive_top_k = learning_store.get_adaptive_top_k()
+        except Exception:
+            adaptive_top_k = 4
+        chunks = rerank_chunks(rewritten_query, fused, top_k=adaptive_top_k)
         trace.mark("rerank", final_chunk_count=len(chunks))
 
         base_score = score_relevance(rewritten_query, chunks)
@@ -1408,6 +1498,18 @@ def answer_question(
                 "Be very clear if you cannot find a definitive answer. "
                 f"{SYSTEM_PROMPT}"
             )
+        try:
+            from learning import learning_store
+            exemplars = learning_store.get_relevant_exemplars(question, limit=1)
+            if exemplars:
+                system_prompt += (
+                    "\n\n[Learned Exemplar Pattern]\n"
+                    f"Relevant verified answer format:\n"
+                    f"Query: {exemplars[0]['question']}\n"
+                    f"Sample grounded answer: {exemplars[0]['answer'][:250]}...\n"
+                )
+        except Exception:
+            pass
 
         try:
             if image:

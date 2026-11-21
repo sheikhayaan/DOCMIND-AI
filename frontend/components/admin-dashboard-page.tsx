@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import Link from 'next/link';
-import { Activity, ArrowLeft, BookOpen, LockKeyhole, LogOut, RefreshCw, ShieldCheck, Siren, Users } from 'lucide-react';
+import { Activity, ArrowLeft, BookOpen, LockKeyhole, LogOut, RefreshCw, ShieldCheck, Siren, Sparkles, Users } from 'lucide-react';
 import { getSessionInfo, loginAdmin, SESSION_CHANGED_EVENT, signOut } from '@/lib/api';
 import { AdminApiError, executeSelfHealing, getAdminOverview, getAdminTelemetry, getNodeTelemetry } from '@/lib/admin-api';
 import type { HealingReport, NodeTelemetry, Overview, Telemetry } from '@/lib/admin-types';
@@ -10,11 +10,13 @@ import OverviewPanel from './admin/overview-panel';
 import UserRoster from './admin/user-roster';
 import IncidentPanel from './admin/incident-panel';
 import PortfolioPanel from './admin/portfolio-panel';
+import LearningPanel from './admin/learning-panel';
 import { ExecutionReport, timestamp } from './admin/shared';
 import styles from './admin/admin.module.css';
 
 const TABS = [
   { id: 'overview', label: 'Live telemetry & overview', Icon: Activity },
+  { id: 'learning', label: 'AI Intelligence & Learning System', Icon: Sparkles },
   { id: 'users', label: 'User roster & activity', Icon: Users },
   { id: 'incidents', label: 'Incidents & self-healing', Icon: Siren },
   { id: 'portfolio', label: 'Architecture & portfolio', Icon: BookOpen },
@@ -167,6 +169,7 @@ export default function AdminDashboardPage() {
       {report && <details open className={styles.audit}><summary>Latest diagnostics result · {report.status}</summary><ExecutionReport report={report} /></details>}
       <section role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} tabIndex={0}>
         {tab === 'overview' && <OverviewPanel {...data} history={history} healing={healing} onHeal={() => void runHealing()} />}
+        {tab === 'learning' && <LearningPanel onChanged={refresh} />}
         {tab === 'users' && <UserRoster revision={revision} onError={handleError} onChanged={refresh} />}
         {tab === 'incidents' && <IncidentPanel revision={revision} healing={healing} onHeal={(id) => void runHealing(id)} onError={handleError} onChanged={refresh} />}
         {tab === 'portfolio' && <PortfolioPanel overview={data.overview} telemetry={data.telemetry} />}

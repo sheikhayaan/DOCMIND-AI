@@ -1,6 +1,7 @@
 """Authenticated admin and session-feedback routes with consistent typed envelopes."""
 
 import asyncio
+import os
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -134,6 +135,26 @@ async def execute_healing(request: Request, admin: Admin, body: HealingRequest |
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return Envelope(data=result)
+
+
+@admin_router.get("/learning", response_model=Envelope[dict[str, Any]])
+async def get_learning_telemetry(request: Request, admin: Admin) -> Envelope[dict[str, Any]]:
+    """Reads persistent self-learning memory, active AI engines, and adaptive parameters."""
+    await rate_limiter.check(request, "admin_read")
+    from learning import learning_store
+    active_engine = "Google Gemini (gemini-2.5-flash)" if os.getenv("GEMINI_API_KEY") else "Groq (qwen/qwen3.8-27b)"
+    stats = await asyncio.to_thread(learning_store.get_stats, active_engine)
+    return Envelope(data=stats.model_dump())
+
+
+@admin_router.post("/learning/consolidate", response_model=Envelope[dict[str, Any]])
+async def run_learning_consolidation(request: Request, admin: Admin) -> Envelope[dict[str, Any]]:
+    """Executes an autonomous self-learning consolidation cycle to calibrate prompt and retrieval weights."""
+    await rate_limiter.check(request, "admin_write")
+    from learning import learning_store
+    active_engine = "gemini-2.5-flash" if os.getenv("GEMINI_API_KEY") else "qwen/qwen3.8-27b"
+    result = await asyncio.to_thread(learning_store.consolidate_learning, active_engine)
+    return Envelope(data=result.model_dump())
 
 
 @feedback_router.get("/{session_id}/feedback", response_model=Envelope[SessionFeedback])

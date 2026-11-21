@@ -539,6 +539,11 @@ async def query_document(request_body: QueryRequest, request: Request) -> QueryR
     if not effective_session_id or await run_in_threadpool(apm.store.is_completed, effective_session_id):
         effective_session_id = await run_in_threadpool(create_session, doc_ids, user_id)
     await run_in_threadpool(apm.store.record_answer, user_id, effective_session_id)
+    try:
+        from learning import learning_store
+        await run_in_threadpool(learning_store.record_session_qa, effective_session_id, question, str(result.get("answer", "")), doc_ids[0] if doc_ids else "")
+    except Exception:
+        pass
     pdf_limiter.mark_question(user_id, doc_ids)
     audit_logger.log("question_asked", user_id, client_ip, {"doc_ids": doc_ids, "message_length": len(question)})
     result["session_id"] = effective_session_id

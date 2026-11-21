@@ -35,8 +35,8 @@ from monitoring import capture_security_event
 # and attaching a verified email doubles it. The allowance is read from the
 # stored user row rather than the request, so every call site agrees on one
 # number without threading the caller's identity through the limiter.
-PDF_LIMIT_GUEST = 2
-PDF_LIMIT_SIGNED_IN = 4
+PDF_LIMIT_GUEST = int(os.getenv("PDF_LIMIT_GUEST", "20"))
+PDF_LIMIT_SIGNED_IN = int(os.getenv("PDF_LIMIT_SIGNED_IN", "100"))
 # Retained as the guest floor so anything reading this constant (audit script,
 # docs, tests) still sees the allowance that applies without an account.
 PDF_LIMIT_PER_USER = PDF_LIMIT_GUEST
@@ -45,7 +45,7 @@ QUESTION_LIMIT_PER_USER = 0  # 0 = unlimited questions per user
 # finite: block_ip() persists any duration <= 0 to SQLite, so a permanent ban
 # would survive restarts and take out everyone sharing the attacker's NAT.
 INJECTION_BLOCK_SECONDS = 3600
-MAX_PDF_SIZE_BYTES = 10 * 1024 * 1024
+MAX_PDF_SIZE_BYTES = int(os.getenv("MAX_PDF_SIZE_BYTES", str(30 * 1024 * 1024)))
 MAX_CHAT_CHARS = 4000
 # ClamAV scanning is mandatory in production. Development can explicitly opt out
 # with CLAMAV_REQUIRED=false, but the default remains fail-closed.
@@ -873,8 +873,8 @@ class PDFUploadValidator:
         """Validates an upload and returns normalized metadata or validation errors."""
         errors: list[str] = []
         if len(file_content) > MAX_PDF_SIZE_BYTES:
-            errors.append("File exceeds maximum size of 10MB")
-        if not file_content.startswith(PDF_MAGIC):
+            errors.append(f"File exceeds maximum size of {MAX_PDF_SIZE_BYTES // (1024 * 1024)}MB")
+        if PDF_MAGIC not in file_content[:1024]:
             errors.append("File does not appear to be a valid PDF")
 
         safe_filename = re.sub(r"[^a-zA-Z0-9._-]", "_", Path(filename).name or "document.pdf")[:255]

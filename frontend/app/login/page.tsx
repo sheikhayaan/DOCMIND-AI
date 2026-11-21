@@ -281,13 +281,6 @@ export default function LoginPage() {
               )}
             </motion.button>
           </form>
-
-          <div className="admin-link-box">
-            <span>System owner? </span>
-            <button onClick={() => router.push('/admin')} className="admin-link">
-              <Shield size={12} /> Admin Security Console
-            </button>
-          </div>
         </motion.section>
       </div>
 

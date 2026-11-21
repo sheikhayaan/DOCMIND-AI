@@ -101,3 +101,13 @@ export function finishSession(sessionId: string, stars: number | null): Promise<
   const path = stars === null ? 'complete' : 'review';
   return protectedJson(`${API_URL}/api/sessions/${encodeURIComponent(sessionId)}/${path}`, 'POST', stars === null ? {} : { stars });
 }
+
+// Retrieves persistent self-learning memory, active engine, and adaptive parameters.
+export function getLearningStats(signal?: AbortSignal): Promise<import('./admin-types').LearningStats> {
+  return protectedJson(`${API_URL}/api/admin/learning`, 'GET', undefined, signal);
+}
+
+// Triggers an autonomous optimization cycle to refine prompt and retrieval weights.
+export function consolidateLearning(): Promise<import('./admin-types').LearningOptimizationResult> {
+  return protectedJson(`${API_URL}/api/admin/learning/consolidate`, 'POST', {});
+}

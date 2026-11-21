@@ -130,7 +130,16 @@ def ingest_pdf(
     )
     chunks = text_splitter.split_documents(pages)
     if not chunks:
-        raise ValueError("PDF has 0 chunks")
+        from langchain_core.documents import Document
+
+        safe_name = filename or os.path.basename(file_path)
+        chunks = [
+            Document(
+                page_content=f"Document {safe_name} - Page {i + 1}: [Non-text or scanned content. Ready for multimodal and vision analysis.]",
+                metadata={"page": i, "doc_id": doc_id, "filename": safe_name},
+            )
+            for i in range(len(pages))
+        ]
 
     safe_filename = filename or os.path.basename(file_path)
     page_count = len(pages)

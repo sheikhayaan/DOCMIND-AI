@@ -48,6 +48,7 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setenv("TESTING", "true")
     monkeypatch.setenv("QUEUE_BACKEND", "inline")
     monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
     monkeypatch.setattr(database_module, "_registry", {})
     store = security.SecurityStore(tmp_path / "security.sqlite3")
     store.upsert_user("usr_admin", "operator@example.test", "admin")

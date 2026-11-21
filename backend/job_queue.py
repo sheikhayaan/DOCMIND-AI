@@ -78,7 +78,7 @@ def enqueue_pdf_job(
 
             drain_completed_jobs()
             with _inline_lock:
-                limit = int(setting("INGESTION_INLINE_MAX_WORKERS", 4, 1, 32))
+                limit = int(setting("INGESTION_INLINE_MAX_WORKERS", 16, 1, 64))
                 if len(_inline_jobs) >= limit:
                     raise QueueUnavailableError("Inline ingestion capacity reached")
                 thread = threading.Thread(

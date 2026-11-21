@@ -165,3 +165,28 @@ export interface SessionFeedback {
   stars: number | null;
   verified: boolean;
 }
+
+export interface LearningStats {
+  total_exemplars: number;
+  average_satisfaction: number;
+  active_engine: string;
+  available_engines: string[];
+  retrieval_top_k: number;
+  adaptive_mode: string;
+  recent_exemplars: {
+    question: string;
+    answer: string;
+    stars: number | null;
+    use_count: number;
+  }[];
+  optimizations_applied: number;
+}
+
+export interface LearningOptimizationResult {
+  status: string;
+  action: string;
+  message: string;
+  exemplars_evaluated: number;
+  adaptive_top_k: number;
+  active_engine: string;
+}
