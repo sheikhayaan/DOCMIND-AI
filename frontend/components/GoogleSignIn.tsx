@@ -29,12 +29,21 @@ interface CredentialResponse {
   credential?: string;
 }
 
+interface PromptNotification {
+  isNotDisplayed(): boolean;
+  isSkippedMoment(): boolean;
+  isDismissedMoment(): boolean;
+}
+
 interface GoogleAccountsId {
   initialize(config: {
     client_id: string;
     callback: (response: CredentialResponse) => void;
+    auto_select?: boolean;
+    cancel_on_tap_outside?: boolean;
   }): void;
   renderButton(parent: HTMLElement, options: Record<string, unknown>): void;
+  prompt(momentListener?: (notification: PromptNotification) => void): void;
   cancel(): void;
 }
 
@@ -73,7 +82,7 @@ function GoogleGlyph() {
   );
 }
 
-// Interactive Google Sign-In control supporting live Google Identity Services, setup guidance, and demo mode.
+// Unbreakable Google Sign-In supporting live Google Identity Services, immediate fallback rendering, and demo mode.
 export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
   const buttonRef = useRef<HTMLDivElement | null>(null);
   const [session, setSession] = useState<SessionInfo | null>(() => getSessionInfo());
@@ -115,18 +124,42 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
     const googleId = window.google?.accounts?.id;
     const target = buttonRef.current;
     if (!googleId || !target) return;
-    googleId.initialize({ client_id: CLIENT_ID, callback: handleCredential });
-    target.innerHTML = '';
-    googleId.renderButton(target, {
-      type: 'standard',
-      theme: 'filled_black',
-      size: 'large',
-      shape: 'rectangular',
-      text: 'signin_with',
-      logo_alignment: 'left',
-      width: 320,
-    });
+
+    try {
+      googleId.initialize({ client_id: CLIENT_ID, callback: handleCredential });
+      target.innerHTML = '';
+      googleId.renderButton(target, {
+        type: 'standard',
+        theme: 'filled_black',
+        size: 'large',
+        shape: 'rectangular',
+        text: 'signin_with',
+        logo_alignment: 'left',
+        width: 320,
+      });
+    } catch {
+      // If renderButton fails (e.g. invalid origin), fallback button remains visible
+    }
   }, [scriptReady, session?.email, handleCredential]);
+
+  // Invokes Google One Tap prompt or opens fallback setup/demo modal if blocked.
+  const handleNativeClick = () => {
+    if (busy) return;
+    const googleId = window.google?.accounts?.id;
+    if (googleId && CLIENT_ID) {
+      try {
+        googleId.prompt((notification) => {
+          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+            setShowModal(true);
+          }
+        });
+      } catch {
+        setShowModal(true);
+      }
+    } else {
+      setShowModal(true);
+    }
+  };
 
   // Signs out the user and clears authentication state.
   const handleSignOut = () => {
@@ -161,13 +194,11 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
 
   return (
     <div className="google-signin-container">
-      {CLIENT_ID && (
-        <Script
-          src="https://accounts.google.com/gsi/client"
-          strategy="afterInteractive"
-          onLoad={() => setScriptReady(true)}
-        />
-      )}
+      <Script
+        src="https://accounts.google.com/gsi/client"
+        strategy="afterInteractive"
+        onLoad={() => setScriptReady(true)}
+      />
 
       {signedInEmail ? (
         <div className="google-user-pill">
@@ -186,21 +217,21 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
             Sign out
           </button>
         </div>
-      ) : CLIENT_ID ? (
-        <div className="google-gis-wrap">
-          <div ref={buttonRef} className="google-button-slot" />
-        </div>
       ) : (
-        <div className="google-fallback-wrap">
+        <div className="google-button-stack">
+          {/* Always rendered, immediately visible native button */}
           <button
             type="button"
             className="google-action-button"
-            onClick={() => setShowModal(true)}
+            onClick={handleNativeClick}
             disabled={busy}
           >
             <GoogleGlyph />
             <span>Continue with Google</span>
           </button>
+
+          {/* Official Google Identity Services element layered over target when mounted */}
+          <div ref={buttonRef} className="google-gis-slot" />
         </div>
       )}
 
@@ -332,6 +363,14 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
           gap: 8px;
         }
 
+        .google-button-stack {
+          position: relative;
+          width: 100%;
+          display: flex;
+          justify-content: center;
+          min-height: 44px;
+        }
+
         .google-action-button {
           display: inline-flex;
           align-items: center;
@@ -339,7 +378,7 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
           gap: 12px;
           width: 100%;
           padding: 12px 18px;
-          border: 1px solid rgba(255, 255, 255, 0.12);
+          border: 1px solid rgba(255, 255, 255, 0.14);
           border-radius: 10px;
           background: rgba(255, 255, 255, 0.05);
           color: #fff;
@@ -351,7 +390,7 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
 
         .google-action-button:hover:not(:disabled) {
           background: rgba(255, 255, 255, 0.09);
-          border-color: rgba(255, 255, 255, 0.25);
+          border-color: rgba(255, 255, 255, 0.28);
           transform: translateY(-1px);
           box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
         }
@@ -359,6 +398,19 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
         .google-action-button:disabled {
           opacity: 0.6;
           cursor: not-allowed;
+        }
+
+        .google-gis-slot {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 2;
+        }
+
+        .google-gis-slot:empty {
+          display: none;
         }
 
         .google-user-pill {
@@ -401,19 +453,6 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
         .signout-button:hover:not(:disabled) {
           background: rgba(255, 255, 255, 0.1);
           color: #fff;
-        }
-
-        .google-gis-wrap {
-          display: flex;
-          justify-content: center;
-          width: 100%;
-        }
-
-        .google-button-slot {
-          min-height: 40px;
-          width: 100%;
-          display: flex;
-          justify-content: center;
         }
 
         .google-error-text {
