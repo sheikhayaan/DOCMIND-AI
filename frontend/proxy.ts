@@ -19,17 +19,19 @@ function buildCsp(nonce: string): string {
     "'strict-dynamic'",
     "https://www.google.com/recaptcha/",
     "https://www.gstatic.com/recaptcha/",
+    "https://accounts.google.com/gsi/client",
+    "https://accounts.google.com",
   ];
   if (!IS_PRODUCTION) scriptSources.push("'unsafe-eval'");
 
   return [
     "default-src 'self'",
     `script-src ${scriptSources.join(" ")}`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com",
     "font-src 'self' https://fonts.gstatic.com data:",
-    "img-src 'self' data: blob:",
-    `connect-src 'self' ${API_URL} https://www.google.com https://*.sentry.io`,
-    "frame-src 'self' blob: https://www.google.com/recaptcha/",
+    "img-src 'self' data: blob: https://*.googleusercontent.com https://www.gstatic.com",
+    `connect-src 'self' ${API_URL} https://www.google.com https://accounts.google.com https://*.sentry.io`,
+    "frame-src 'self' blob: https://www.google.com/recaptcha/ https://accounts.google.com/",
     "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'self'",
@@ -61,7 +63,7 @@ export function proxy(request: NextRequest): NextResponse {
     // Voice input is same-origin and still requires an explicit browser permission grant.
     "camera=(), microphone=(self), geolocation=(), payment=()",
   );
-  response.headers.set("Cross-Origin-Opener-Policy", "same-origin");
+  response.headers.set("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
   response.headers.set("Cross-Origin-Resource-Policy", "same-origin");
   if (IS_PRODUCTION) {
     response.headers.set(
