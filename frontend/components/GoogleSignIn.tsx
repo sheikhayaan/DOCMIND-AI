@@ -56,6 +56,8 @@ declare global {
 interface GoogleSignInProps {
   // Called after sign-in or sign-out so the page can reload user-scoped data.
   onChange?: () => void;
+  // Route to navigate to after successful authentication.
+  redirectTo?: string;
 }
 
 // Google's official four-color logo mark.
@@ -83,14 +85,18 @@ function GoogleGlyph() {
 }
 
 // Unbreakable Google Sign-In supporting live Google Identity Services, immediate fallback rendering, and demo mode.
-export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
+export default function GoogleSignIn({ onChange, redirectTo = '/' }: GoogleSignInProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLDivElement | null>(null);
   const [session, setSession] = useState<SessionInfo | null>(() => getSessionInfo());
-  const [scriptReady, setScriptReady] = useState(false);
+  const [scriptReady, setScriptReady] = useState(() => {
+    return typeof window !== 'undefined' && Boolean(window.google?.accounts?.id);
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [gisRendered, setGisRendered] = useState(false);
 
   // Copies configuration text to the user clipboard and gives brief visual feedback.
   const copyText = (key: string, text: string) => {
@@ -99,7 +105,7 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  // Exchanges Google Identity credential token with backend session token.
+  // Exchanges Google Identity credential token with backend session token and navigates home.
   const handleCredential = useCallback(
     async (response: CredentialResponse) => {
       if (!response.credential) return;
@@ -108,14 +114,16 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
       try {
         await loginWithGoogle(response.credential);
         setSession(getSessionInfo());
+        if (typeof window !== 'undefined') {
+          window.location.href = redirectTo;
+        }
         onChange?.();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Google sign-in failed');
-      } finally {
         setBusy(false);
       }
     },
-    [onChange],
+    [onChange, redirectTo],
   );
 
   // Mounts the official Google Identity Services button once the script is loaded.
@@ -128,15 +136,26 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
     try {
       googleId.initialize({ client_id: CLIENT_ID, callback: handleCredential });
       target.innerHTML = '';
+      
+      const containerWidth = containerRef.current?.clientWidth || 360;
+      const buttonWidth = Math.min(400, Math.max(280, containerWidth));
+
       googleId.renderButton(target, {
         type: 'standard',
         theme: 'filled_black',
         size: 'large',
         shape: 'rectangular',
-        text: 'signin_with',
+        text: 'continue_with',
         logo_alignment: 'left',
-        width: 320,
+        width: buttonWidth,
       });
+
+      const timer = setTimeout(() => {
+        if (target.querySelector('iframe')) {
+          setGisRendered(true);
+        }
+      }, 120);
+      return () => clearTimeout(timer);
     } catch {
       // If renderButton fails (e.g. invalid origin), fallback button remains visible
     }
@@ -169,7 +188,7 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
     onChange?.();
   };
 
-  // Signs in as a verified demo user so LinkedIn visitors can test full authenticated features immediately.
+  // Signs in as a verified demo user and navigates directly to the destination.
   const handleDemoSignIn = async () => {
     setBusy(true);
     setError('');
@@ -182,10 +201,12 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
       }
       setSession(getSessionInfo());
       setShowModal(false);
+      if (typeof window !== 'undefined') {
+        window.location.href = redirectTo;
+      }
       onChange?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign into demo account');
-    } finally {
       setBusy(false);
     }
   };
@@ -208,30 +229,54 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
               Signed in as <strong>{signedInEmail}</strong>
             </span>
           </div>
-          <button
-            type="button"
-            className="signout-button"
-            onClick={handleSignOut}
-            disabled={busy}
-          >
-            Sign out
-          </button>
+          <div className="user-actions">
+            <button
+              type="button"
+              className="continue-workspace-btn"
+              onClick={() => {
+                if (typeof window !== 'undefined') window.location.href = redirectTo;
+                onChange?.();
+              }}
+            >
+              Go to Workspace <ArrowRight size={13} />
+            </button>
+            <button
+              type="button"
+              className="signout-button"
+              onClick={handleSignOut}
+              disabled={busy}
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       ) : (
-        <div className="google-button-stack">
-          {/* Always rendered, immediately visible native button */}
+        <div ref={containerRef} className="google-button-stack">
+          {/* Official Google Identity Services element rendered here */}
+          <div ref={buttonRef} className="google-gis-slot" />
+
+          {/* Always rendered, polished native button that shows immediately or as fallback */}
           <button
             type="button"
-            className="google-action-button"
+            className={`google-action-button ${gisRendered ? 'gis-hidden' : ''}`}
             onClick={handleNativeClick}
             disabled={busy}
+            aria-label="Continue with Google"
           >
-            <GoogleGlyph />
-            <span>Continue with Google</span>
+            {busy ? (
+              <div className="google-loading-state">
+                <div className="google-loader" />
+                <span>Connecting with Google...</span>
+              </div>
+            ) : (
+              <>
+                <div className="google-icon-box">
+                  <GoogleGlyph />
+                </div>
+                <span className="google-btn-text">Continue with Google</span>
+              </>
+            )}
           </button>
-
-          {/* Official Google Identity Services element layered over target when mounted */}
-          <div ref={buttonRef} className="google-gis-slot" />
         </div>
       )}
 
@@ -360,7 +405,7 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
           width: 100%;
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 10px;
         }
 
         .google-button-stack {
@@ -368,36 +413,92 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
           width: 100%;
           display: flex;
           justify-content: center;
-          min-height: 44px;
+          align-items: center;
+          min-height: 46px;
         }
 
         .google-action-button {
+          position: relative;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           gap: 12px;
           width: 100%;
-          padding: 12px 18px;
-          border: 1px solid rgba(255, 255, 255, 0.14);
-          border-radius: 10px;
-          background: rgba(255, 255, 255, 0.05);
-          color: #fff;
+          height: 46px;
+          padding: 0 18px;
+          border-radius: 12px;
+          background: #131314;
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          color: #f1f5f9;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
           font-size: 14px;
-          font-weight: 600;
+          font-weight: 500;
+          letter-spacing: 0.15px;
           cursor: pointer;
-          transition: all 0.2s ease;
+          transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+          outline: none;
+          z-index: 1;
+        }
+
+        .google-action-button.gis-hidden {
+          opacity: 0;
+          pointer-events: none;
         }
 
         .google-action-button:hover:not(:disabled) {
-          background: rgba(255, 255, 255, 0.09);
-          border-color: rgba(255, 255, 255, 0.28);
-          transform: translateY(-1px);
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+          background: #1f1f23;
+          border-color: rgba(255, 255, 255, 0.32);
+          box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 0 20px rgba(66, 133, 244, 0.2);
+          transform: translateY(-0.5px);
+        }
+
+        .google-action-button:active:not(:disabled) {
+          transform: translateY(0);
+          background: #18181b;
         }
 
         .google-action-button:disabled {
           opacity: 0.6;
           cursor: not-allowed;
+        }
+
+        .google-icon-box {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 20px;
+          height: 20px;
+          flex-shrink: 0;
+        }
+
+        .google-btn-text {
+          font-weight: 500;
+          color: #f8fafc;
+        }
+
+        .google-loading-state {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 13.5px;
+          color: #93c5fd;
+        }
+
+        .google-loader {
+          width: 18px;
+          height: 18px;
+          border: 2px solid rgba(255, 255, 255, 0.2);
+          border-top-color: #4285f4;
+          border-right-color: #34a853;
+          border-bottom-color: #fbbc05;
+          border-left-color: #ea4335;
+          border-radius: 50%;
+          animation: google-spin 0.8s linear infinite;
+        }
+
+        @keyframes google-spin {
+          to { transform: rotate(360deg); }
         }
 
         .google-gis-slot {
@@ -407,6 +508,10 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
           align-items: center;
           justify-content: center;
           z-index: 2;
+          width: 100%;
+          height: 46px;
+          overflow: hidden;
+          border-radius: 12px;
         }
 
         .google-gis-slot:empty {
@@ -419,9 +524,9 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
           justify-content: space-between;
           gap: 12px;
           padding: 10px 14px;
-          border: 1px solid rgba(59, 130, 246, 0.3);
-          border-radius: 8px;
-          background: rgba(59, 130, 246, 0.06);
+          border: 1px solid rgba(59, 130, 246, 0.35);
+          border-radius: 10px;
+          background: rgba(59, 130, 246, 0.08);
           color: rgba(255, 255, 255, 0.9);
           font-size: 13px;
         }
@@ -437,6 +542,31 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
 
         .user-info strong {
           color: #60a5fa;
+        }
+
+        .user-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .continue-workspace-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 6px 12px;
+          border-radius: 7px;
+          border: none;
+          background: #2563eb;
+          color: #fff;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background 0.2s ease;
+        }
+
+        .continue-workspace-btn:hover {
+          background: #1d4ed8;
         }
 
         .signout-button {

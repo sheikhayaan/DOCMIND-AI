@@ -35,14 +35,33 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [settled, setSettled] = useState(false);
 
-  // Skip login form if already signed in
+  // Skip login form if already signed in or when session changes
   useEffect(() => {
-    if (getSessionInfo()?.email) router.replace('/');
+    const checkAndRedirect = () => {
+      if (getSessionInfo()?.email) {
+        if (typeof window !== 'undefined') {
+          window.location.href = '/';
+        } else {
+          router.replace('/');
+        }
+      }
+    };
+    checkAndRedirect();
+    window.addEventListener('docmind:session-changed', checkAndRedirect);
+    window.addEventListener('storage', checkAndRedirect);
+    return () => {
+      window.removeEventListener('docmind:session-changed', checkAndRedirect);
+      window.removeEventListener('storage', checkAndRedirect);
+    };
   }, [router]);
 
   const finish = useCallback(() => {
     setSettled(true);
-    router.replace('/');
+    if (typeof window !== 'undefined') {
+      window.location.href = '/';
+    } else {
+      router.replace('/');
+    }
   }, [router]);
 
   const isSignUp = mode === 'signup';
@@ -88,7 +107,11 @@ export default function LoginPage() {
 
   const continueAsGuest = () => {
     allowGuestAccess();
-    router.push('/');
+    if (typeof window !== 'undefined') {
+      window.location.href = '/';
+    } else {
+      router.push('/');
+    }
   };
 
   return (
@@ -209,7 +232,7 @@ export default function LoginPage() {
 
           {/* Social Sign In */}
           <div className="google-wrap">
-            <GoogleSignIn />
+            <GoogleSignIn onChange={finish} redirectTo="/" />
           </div>
 
           <div className="divider">
