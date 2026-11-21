@@ -20,8 +20,10 @@ import {
   type SessionInfo,
 } from '@/lib/api';
 
-// Inlined at build time. When present, enables real Google Identity Services one-tap/popup.
-const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+// Inlined at build time with stable fallback for Google Identity Services.
+const CLIENT_ID =
+  process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
+  '78953766328-981d3m2bisao1o1tiar2oblv0igl4ng5.apps.googleusercontent.com';
 
 interface CredentialResponse {
   credential?: string;

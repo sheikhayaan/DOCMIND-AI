@@ -39,6 +39,7 @@ jobs:
           AUTH_SECRET: ci-testing-auth-secret-signing-key-stable
           ADMIN_ACCESS_TOKEN: ci-dummy-admin-token
           ADMIN_EMAIL: admin@example.com
+          SECURITY_DB_PATH: .data/security.sqlite3
         run: python -m pytest tests/ -v
 
   frontend:

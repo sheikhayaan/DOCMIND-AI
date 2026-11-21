@@ -13,53 +13,65 @@ export default function BackendWarmup() {
   const [state, setState] = useState<BackendState>('idle');
   const [visible, setVisible] = useState(false);
 
-  // Performs a single health probe to wake the remote container and record responsiveness.
-  const pingBackend = async (isInitial = false) => {
-    const timer = isInitial
-      ? setTimeout(() => {
-          setState('warming');
-          setVisible(true);
-        }, 1800)
-      : null;
-
-    try {
-      const res = await fetch(`${API_BASE.replace(/\/+$/, '')}/health`, {
-        method: 'GET',
-        cache: 'no-store',
-      });
-
-      if (timer) clearTimeout(timer);
-
-      if (res.ok) {
-        setState('connected');
-        if (visible || isInitial) {
-          setVisible(true);
-          // Dismiss banner smoothly after 3.5 seconds
-          const hideTimer = setTimeout(() => {
-            setVisible(false);
-          }, 3500);
-          return () => clearTimeout(hideTimer);
-        }
-      } else {
-        setState('error');
-      }
-    } catch {
-      if (timer) clearTimeout(timer);
-      setState('warming');
-      setVisible(true);
-    }
-  };
-
   useEffect(() => {
-    // Initial warmup probe
-    pingBackend(true);
+    let mounted = true;
+    let autoHideTimer: NodeJS.Timeout | null = null;
+
+    // Performs an asynchronous probe to wake the remote container and record responsiveness.
+    const executeProbe = async (isInitial: boolean) => {
+      const slowTimer = isInitial
+        ? setTimeout(() => {
+            if (mounted) {
+              setState('warming');
+              setVisible(true);
+            }
+          }, 1800)
+        : null;
+
+      try {
+        const res = await fetch(`${API_BASE.replace(/\/+$/, '')}/health`, {
+          method: 'GET',
+          cache: 'no-store',
+        });
+        if (slowTimer) clearTimeout(slowTimer);
+
+        if (!mounted) return;
+
+        if (res.ok) {
+          setState('connected');
+          if (isInitial) {
+            setVisible(true);
+            autoHideTimer = setTimeout(() => {
+              if (mounted) setVisible(false);
+            }, 3500);
+          }
+        } else {
+          setState('error');
+        }
+      } catch {
+        if (slowTimer) clearTimeout(slowTimer);
+        if (!mounted) return;
+        setState('warming');
+        setVisible(true);
+      }
+    };
+
+    // Kick off probe asynchronously outside the initial render pass
+    const initTimer = setTimeout(() => {
+      executeProbe(true);
+    }, 50);
 
     // Continuous 4-minute heartbeat while user tab remains active
     const interval = setInterval(() => {
-      pingBackend(false);
+      executeProbe(false);
     }, 4 * 60 * 1000);
 
-    return () => clearInterval(interval);
+    return () => {
+      mounted = false;
+      clearTimeout(initTimer);
+      if (autoHideTimer) clearTimeout(autoHideTimer);
+      clearInterval(interval);
+    };
   }, []);
 
   if (!visible && state !== 'warming') {

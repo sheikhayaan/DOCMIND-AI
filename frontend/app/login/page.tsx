@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Eye, EyeOff, FileText, ArrowLeft, Shield, Sparkles, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, FileText, ArrowLeft, Sparkles, CheckCircle2, ArrowRight } from 'lucide-react';
 import GoogleSignIn from '@/components/GoogleSignIn';
 import { allowGuestAccess } from '@/components/AuthGate';
 import { getSessionInfo, loginWithEmail, signUpWithEmail } from '@/lib/api';

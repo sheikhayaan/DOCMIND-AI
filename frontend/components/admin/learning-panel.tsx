@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Brain, Sparkles, RefreshCw, Cpu, CheckCircle2, TrendingUp, Layers, HelpCircle, Globe, Radio } from 'lucide-react';
+import { Brain, Sparkles, RefreshCw, Cpu, CheckCircle2, TrendingUp, HelpCircle, Globe, Radio } from 'lucide-react';
 import { getLearningStats, consolidateLearning } from '@/lib/admin-api';
 import type { LearningStats, LearningOptimizationResult } from '@/lib/admin-types';
 import styles from './admin.module.css';
@@ -32,8 +32,13 @@ export default function LearningPanel({ onChanged }: LearningPanelProps) {
 
   useEffect(() => {
     const controller = new AbortController();
-    loadData(controller.signal);
-    return () => controller.abort();
+    const timer = setTimeout(() => {
+      loadData(controller.signal);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, []);
 
   const handleConsolidate = async () => {

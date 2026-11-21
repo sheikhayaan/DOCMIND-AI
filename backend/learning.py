@@ -54,7 +54,9 @@ class SelfLearningStore:
 
     def __init__(self, db_path: Path | None = None) -> None:
         """Initializes idempotent SQLite schema for learning memory and adaptive tuning."""
-        path = db_path or Path(os.getenv("SECURITY_DB_PATH", "backend/.data/security.sqlite3"))
+        default_path = Path(__file__).resolve().parent / ".data" / "security.sqlite3"
+        path = db_path or Path(os.getenv("SECURITY_DB_PATH", str(default_path)))
+        path.parent.mkdir(parents=True, exist_ok=True)
         self.pool = get_pool(path, "security")
         self._init_schema()
 
