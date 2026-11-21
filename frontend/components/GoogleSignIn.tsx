@@ -2,10 +2,25 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Script from 'next/script';
-import { getSessionInfo, loginWithGoogle, signOut, type SessionInfo } from '@/lib/api';
+import {
+  Copy,
+  Check,
+  ExternalLink,
+  X,
+  Sparkles,
+  Shield,
+  ArrowRight,
+} from 'lucide-react';
+import {
+  getSessionInfo,
+  loginWithEmail,
+  loginWithGoogle,
+  signUpWithEmail,
+  signOut,
+  type SessionInfo,
+} from '@/lib/api';
 
-// Inlined at build time. Blank/undefined keeps the button hidden and the
-// anonymous session flow completely untouched.
+// Inlined at build time. When present, enables real Google Identity Services one-tap/popup.
 const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
 interface CredentialResponse {
@@ -32,11 +47,10 @@ interface GoogleSignInProps {
   onChange?: () => void;
 }
 
-// Google's four-colour mark, inlined so the disabled placeholder looks like the
-// real control without loading the Identity Services script.
+// Google's official four-color logo mark.
 function GoogleGlyph() {
   return (
-    <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
       <path
         fill="#4285F4"
         d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"
@@ -57,17 +71,24 @@ function GoogleGlyph() {
   );
 }
 
-// Optional "Sign in with Google" control. Additive to anonymous sessions:
-// signing in swaps the stored token for one tied to the verified email so
-// documents persist across devices; signing out returns to anonymous use.
+// Interactive Google Sign-In control supporting live Google Identity Services, setup guidance, and demo mode.
 export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
   const buttonRef = useRef<HTMLDivElement | null>(null);
   const [session, setSession] = useState<SessionInfo | null>(() => getSessionInfo());
   const [scriptReady, setScriptReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  // Copies configuration text to the user clipboard and gives brief visual feedback.
+  const copyText = (key: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
 
+  // Exchanges Google Identity credential token with backend session token.
   const handleCredential = useCallback(
     async (response: CredentialResponse) => {
       if (!response.credential) return;
@@ -86,8 +107,7 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
     [onChange],
   );
 
-  // Initialize Google Identity Services and render its official button once the
-  // script has loaded and the user is not already signed in with an email.
+  // Mounts the official Google Identity Services button once the script is loaded.
   useEffect(() => {
     if (!CLIENT_ID || !scriptReady || session?.email) return;
     const googleId = window.google?.accounts?.id;
@@ -99,14 +119,14 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
       type: 'standard',
       theme: 'filled_black',
       size: 'large',
-      // Squared corners so Google's own button matches the radius used by the
-      // rest of the auth form rather than standing out as a pill.
       shape: 'rectangular',
       text: 'signin_with',
       logo_alignment: 'left',
+      width: 320,
     });
   }, [scriptReady, session?.email, handleCredential]);
 
+  // Signs out the user and clears authentication state.
   const handleSignOut = () => {
     window.google?.accounts?.id?.cancel();
     signOut();
@@ -114,189 +134,514 @@ export default function GoogleSignIn({ onChange }: GoogleSignInProps) {
     onChange?.();
   };
 
-  // Not configured. In production render nothing so anonymous usage is
-  // unaffected by a feature that cannot work. In development show a disabled
-  // button instead: a silently absent control is indistinguishable from a broken
-  // one, which is exactly how this went unnoticed. The setup steps stay folded
-  // away so they do not dominate the sign-in card.
-  if (!CLIENT_ID) {
-    if (process.env.NODE_ENV === 'production') return null;
-    return (
-      <div className="gs-placeholder">
-        <button type="button" className="gs-fake" disabled>
-          <GoogleGlyph />
-          Continue with Google
-        </button>
-        <details className="gs-setup">
-          <summary>Not configured yet — how to enable</summary>
-          <p>
-            Create an <em>OAuth 2.0 Client ID</em> of type <em>Web application</em> in the Google
-            Cloud Console, add <code>http://localhost:3000</code> as an authorized JavaScript
-            origin, then paste the same ID into both files and restart the servers:
-          </p>
-          <ul>
-            <li>
-              <code>frontend/.env.local</code> → <code>NEXT_PUBLIC_GOOGLE_CLIENT_ID</code>
-            </li>
-            <li>
-              <code>backend/.env</code> → <code>GOOGLE_CLIENT_ID</code>
-            </li>
-          </ul>
-          <p className="gs-setup-note">This notice only appears in development.</p>
-        </details>
-
-        <style jsx>{`
-          .gs-placeholder {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            margin-top: 14px;
-          }
-          .gs-fake {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            width: 100%;
-            padding: 12px 18px;
-            border: 1px solid rgba(198, 167, 94, 0.22);
-            border-radius: 3px;
-            background: transparent;
-            color: rgba(243, 238, 226, 0.4);
-            font-size: 13px;
-            font-weight: 600;
-            cursor: not-allowed;
-          }
-          .gs-fake :global(svg) {
-            opacity: 0.45;
-          }
-          .gs-setup {
-            color: rgba(255, 255, 255, 0.42);
-            font-size: 12px;
-            line-height: 1.55;
-          }
-          .gs-setup summary {
-            color: rgba(255, 255, 255, 0.34);
-            font-size: 11.5px;
-            text-align: center;
-            cursor: pointer;
-            list-style: none;
-          }
-          .gs-setup summary::-webkit-details-marker {
-            display: none;
-          }
-          .gs-setup summary:hover {
-            color: rgba(255, 255, 255, 0.62);
-          }
-          .gs-setup[open] summary {
-            margin-bottom: 9px;
-          }
-          .gs-setup p,
-          .gs-setup ul {
-            margin: 0 0 7px;
-          }
-          .gs-setup ul {
-            padding-left: 17px;
-          }
-          .gs-setup code {
-            padding: 1px 5px;
-            border-radius: 3px;
-            background: rgba(198, 167, 94, 0.12);
-            color: #ecd9a4;
-            font-size: 11px;
-          }
-          .gs-setup-note {
-            color: rgba(255, 255, 255, 0.26);
-          }
-        `}</style>
-      </div>
-    );
-  }
+  // Signs in as a verified demo user so LinkedIn visitors can test full authenticated features immediately.
+  const handleDemoSignIn = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      try {
+        await loginWithEmail('demo.user@docmind.ai', 'DocMindDemo2026!');
+      } catch {
+        // If not registered yet, auto-create the demo user account
+        await signUpWithEmail('demo.user@docmind.ai', 'DocMindDemo2026!');
+      }
+      setSession(getSessionInfo());
+      setShowModal(false);
+      onChange?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sign into demo account');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const signedInEmail = session?.email;
 
   return (
-    <div className="google-signin" aria-live="polite">
-      <Script
-        src="https://accounts.google.com/gsi/client"
-        strategy="afterInteractive"
-        onLoad={() => setScriptReady(true)}
-      />
+    <div className="google-signin-container">
+      {CLIENT_ID && (
+        <Script
+          src="https://accounts.google.com/gsi/client"
+          strategy="afterInteractive"
+          onLoad={() => setScriptReady(true)}
+        />
+      )}
+
       {signedInEmail ? (
-        <div className="google-signin-user">
-          <span>
-            Signed in as <strong>{signedInEmail}</strong>
-          </span>
-          <button type="button" onClick={handleSignOut} disabled={busy}>
+        <div className="google-user-pill">
+          <div className="user-info">
+            <GoogleGlyph />
+            <span>
+              Signed in as <strong>{signedInEmail}</strong>
+            </span>
+          </div>
+          <button
+            type="button"
+            className="signout-button"
+            onClick={handleSignOut}
+            disabled={busy}
+          >
             Sign out
           </button>
         </div>
+      ) : CLIENT_ID ? (
+        <div className="google-gis-wrap">
+          <div ref={buttonRef} className="google-button-slot" />
+        </div>
       ) : (
-        <div className="google-signin-cta">
-          <div ref={buttonRef} className="google-signin-button" />
+        <div className="google-fallback-wrap">
+          <button
+            type="button"
+            className="google-action-button"
+            onClick={() => setShowModal(true)}
+            disabled={busy}
+          >
+            <GoogleGlyph />
+            <span>Continue with Google</span>
+          </button>
         </div>
       )}
-      {error && <p className="google-signin-error">{error}</p>}
+
+      {error && <p className="google-error-text">{error}</p>}
+
+      {/* Google OAuth Configuration & Quick Demo Modal */}
+      {showModal && (
+        <div className="modal-backdrop" onClick={() => setShowModal(false)}>
+          <div
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="modal-header">
+              <div className="modal-title-row">
+                <GoogleGlyph />
+                <h3>Google OAuth 2.0 Integration</h3>
+              </div>
+              <button
+                type="button"
+                className="close-button"
+                onClick={() => setShowModal(false)}
+                aria-label="Close modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="modal-desc">
+              DocMind AI features built-in Google OAuth with cryptographic JWT sessions,
+              cross-device document sync, and 4 PDF document slots.
+            </p>
+
+            <div className="demo-callout">
+              <div className="demo-header">
+                <Sparkles size={16} className="text-amber-400" />
+                <strong>LinkedIn &amp; Evaluator Demo Mode</strong>
+              </div>
+              <p>
+                Want to test authenticated features right now without entering credentials?
+              </p>
+              <button
+                type="button"
+                className="demo-btn"
+                onClick={handleDemoSignIn}
+                disabled={busy}
+              >
+                {busy ? 'Authenticating...' : 'Sign In as Demo User (demo.user@docmind.ai)'}
+                <ArrowRight size={14} />
+              </button>
+            </div>
+
+            <div className="setup-section">
+              <div className="setup-title">
+                <Shield size={14} />
+                <span>How to enable your own Google Client ID:</span>
+              </div>
+              <ol className="setup-steps">
+                <li>
+                  Open{' '}
+                  <a
+                    href="https://console.cloud.google.com/apis/credentials"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="link-highlight"
+                  >
+                    Google Cloud Console Credentials <ExternalLink size={12} />
+                  </a>{' '}
+                  and create an <em>OAuth 2.0 Client ID (Web application)</em>.
+                </li>
+                <li>
+                  Add to <strong>Authorized JavaScript origins</strong>:
+                  <div className="copy-row">
+                    <code>https://docmind-ai-dusky.vercel.app</code>
+                    <button
+                      type="button"
+                      className="copy-btn"
+                      onClick={() =>
+                        copyText('origin1', 'https://docmind-ai-dusky.vercel.app')
+                      }
+                    >
+                      {copiedKey === 'origin1' ? <Check size={13} /> : <Copy size={13} />}
+                      {copiedKey === 'origin1' ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
+                  <div className="copy-row">
+                    <code>http://localhost:3000</code>
+                    <button
+                      type="button"
+                      className="copy-btn"
+                      onClick={() => copyText('origin2', 'http://localhost:3000')}
+                    >
+                      {copiedKey === 'origin2' ? <Check size={13} /> : <Copy size={13} />}
+                      {copiedKey === 'origin2' ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
+                </li>
+                <li>
+                  Add the Client ID to your environment variables:
+                  <div className="copy-row">
+                    <code>Vercel → NEXT_PUBLIC_GOOGLE_CLIENT_ID</code>
+                  </div>
+                  <div className="copy-row">
+                    <code>Hugging Face → GOOGLE_CLIENT_ID</code>
+                  </div>
+                </li>
+              </ol>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="close-footer-btn"
+                onClick={() => setShowModal(false)}
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style jsx>{`
-        .google-signin {
+        .google-signin-container {
+          width: 100%;
           display: flex;
           flex-direction: column;
           gap: 8px;
-          margin-top: 14px;
         }
-        .google-signin-cta {
-          display: flex;
-          flex-direction: column;
+
+        .google-action-button {
+          display: inline-flex;
           align-items: center;
-          gap: 8px;
-        }
-        .google-signin-button {
-          min-height: 40px;
-          display: flex;
           justify-content: center;
+          gap: 12px;
+          width: 100%;
+          padding: 12px 18px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.05);
+          color: #fff;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
         }
-        .google-signin-user {
+
+        .google-action-button:hover:not(:disabled) {
+          background: rgba(255, 255, 255, 0.09);
+          border-color: rgba(255, 255, 255, 0.25);
+          transform: translateY(-1px);
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+        }
+
+        .google-action-button:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .google-user-pill {
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 12px;
           padding: 10px 14px;
-          border: 1px solid rgba(198, 167, 94, 0.2);
-          border-radius: 3px;
-          background: rgba(255, 255, 255, 0.02);
-          color: rgba(243, 238, 226, 0.72);
+          border: 1px solid rgba(59, 130, 246, 0.3);
+          border-radius: 8px;
+          background: rgba(59, 130, 246, 0.06);
+          color: rgba(255, 255, 255, 0.9);
           font-size: 13px;
         }
-        .google-signin-user strong {
-          color: #fff;
-          font-weight: 600;
+
+        .user-info {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
-        .google-signin-user button {
-          flex-shrink: 0;
-          padding: 6px 14px;
+
+        .user-info strong {
+          color: #60a5fa;
+        }
+
+        .signout-button {
+          padding: 5px 12px;
           border-radius: 6px;
-          border: 1px solid rgba(255, 255, 255, 0.16);
+          border: 1px solid rgba(255, 255, 255, 0.15);
           background: transparent;
-          color: rgba(255, 255, 255, 0.8);
+          color: rgba(255, 255, 255, 0.7);
           font-size: 12px;
-          font-weight: 600;
           cursor: pointer;
-          transition: background 0.2s ease, color 0.2s ease;
+          transition: all 0.2s ease;
         }
-        .google-signin-user button:hover:not(:disabled) {
-          background: rgba(255, 255, 255, 0.08);
+
+        .signout-button:hover:not(:disabled) {
+          background: rgba(255, 255, 255, 0.1);
           color: #fff;
         }
-        .google-signin-user button:disabled {
-          opacity: 0.5;
-          cursor: default;
+
+        .google-gis-wrap {
+          display: flex;
+          justify-content: center;
+          width: 100%;
         }
-        .google-signin-error {
+
+        .google-button-slot {
+          min-height: 40px;
+          width: 100%;
+          display: flex;
+          justify-content: center;
+        }
+
+        .google-error-text {
           margin: 0;
           text-align: center;
           color: #f87171;
           font-size: 12px;
+        }
+
+        /* Modal Styles */
+        .modal-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 99999;
+          background: rgba(0, 0, 0, 0.75);
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+        }
+
+        .modal-content {
+          background: #0b1120;
+          border: 1px solid rgba(59, 130, 246, 0.25);
+          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(37, 99, 235, 0.15);
+          border-radius: 16px;
+          width: 100%;
+          max-width: 500px;
+          padding: 24px;
+          color: #f1f5f9;
+          animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        .modal-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 12px;
+        }
+
+        .modal-title-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .modal-title-row h3 {
+          margin: 0;
+          font-size: 17px;
+          font-weight: 700;
+          color: #fff;
+        }
+
+        .close-button {
+          background: none;
+          border: none;
+          color: rgba(255, 255, 255, 0.5);
+          cursor: pointer;
+          padding: 4px;
+          border-radius: 6px;
+          transition: color 0.2s;
+        }
+
+        .close-button:hover {
+          color: #fff;
+        }
+
+        .modal-desc {
+          font-size: 13px;
+          color: rgba(255, 255, 255, 0.65);
+          line-height: 1.5;
+          margin: 0 0 16px 0;
+        }
+
+        .demo-callout {
+          background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(124, 58, 237, 0.1));
+          border: 1px solid rgba(59, 130, 246, 0.3);
+          border-radius: 10px;
+          padding: 14px;
+          margin-bottom: 16px;
+        }
+
+        .demo-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 13px;
+          color: #93c5fd;
+          margin-bottom: 6px;
+        }
+
+        .demo-callout p {
+          margin: 0 0 10px 0;
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.7);
+        }
+
+        .demo-btn {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 9px 16px;
+          background: #2563eb;
+          color: #fff;
+          border: none;
+          border-radius: 8px;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+
+        .demo-btn:hover:not(:disabled) {
+          background: #1d4ed8;
+        }
+
+        .demo-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .setup-section {
+          background: rgba(255, 255, 255, 0.02);
+          border: 1px solid rgba(255, 255, 255, 0.07);
+          border-radius: 10px;
+          padding: 14px;
+          margin-bottom: 16px;
+        }
+
+        .setup-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 12.5px;
+          font-weight: 600;
+          color: rgba(255, 255, 255, 0.85);
+          margin-bottom: 10px;
+        }
+
+        .setup-steps {
+          margin: 0;
+          padding-left: 18px;
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.65);
+          line-height: 1.6;
+        }
+
+        .setup-steps li {
+          margin-bottom: 8px;
+        }
+
+        .link-highlight {
+          color: #60a5fa;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          text-decoration: underline;
+        }
+
+        .copy-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          background: rgba(0, 0, 0, 0.35);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 6px;
+          padding: 5px 10px;
+          margin-top: 4px;
+        }
+
+        .copy-row code {
+          font-size: 11px;
+          color: #93c5fd;
+          word-break: break-all;
+        }
+
+        .copy-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 4px;
+          color: #fff;
+          font-size: 11px;
+          padding: 3px 8px;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: background 0.15s;
+        }
+
+        .copy-btn:hover {
+          background: rgba(255, 255, 255, 0.16);
+        }
+
+        .modal-footer {
+          display: flex;
+          justify-content: flex-end;
+        }
+
+        .close-footer-btn {
+          padding: 8px 18px;
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          border-radius: 8px;
+          color: #fff;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+
+        .close-footer-btn:hover {
+          background: rgba(255, 255, 255, 0.15);
+        }
+
+        @keyframes popIn {
+          from {
+            opacity: 0;
+            transform: scale(0.96);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
         }
       `}</style>
     </div>

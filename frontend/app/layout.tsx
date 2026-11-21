@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import AuthGate from "@/components/AuthGate";
+import BackendWarmup from "@/components/BackendWarmup";
 import PageTransition from "@/components/PageTransition";
 import WebVitals from "@/components/WebVitals";
 import "./globals.css";
@@ -42,6 +43,7 @@ export default function RootLayout({
     >
       <body className="noise flex min-h-full flex-col bg-[#000000]">
         <WebVitals />
+        <BackendWarmup />
         <AuthGate>
           <PageTransition>{children}</PageTransition>
         </AuthGate>

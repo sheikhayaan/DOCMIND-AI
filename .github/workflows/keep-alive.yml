@@ -1,0 +1,42 @@
+name: Hugging Face 24/7 Keep-Alive
+
+on:
+  schedule:
+    # Ping every 14 minutes to prevent Hugging Face Space from idling into sleep
+    - cron: '*/14 * * * *'
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/keep-alive.yml'
+
+jobs:
+  keepalive:
+    name: Ping DocMind AI Backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Hugging Face Space Health
+        run: |
+          BACKEND_URL="https://ayaandevloper408-docmind-ai-backend.hf.space/health"
+          echo "Pinging DocMind AI backend on Hugging Face: $BACKEND_URL"
+          echo "Timestamp (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
+          
+          # Retry up to 3 times with exponential backoff and 30s timeout
+          STATUS=$(curl -s -S -o response.json -w "%{http_code}" --retry 3 --retry-delay 5 --max-time 30 "$BACKEND_URL" || echo "failed")
+          echo "HTTP Status Code: $STATUS"
+          
+          if [ -f response.json ]; then
+            echo "Response Body:"
+            cat response.json
+            echo ""
+          fi
+          
+          if [ "$STATUS" = "200" ]; then
+            echo "SUCCESS: Hugging Face Space backend is awake and healthy."
+            exit 0
+          else
+            echo "NOTICE: Status was $STATUS. Sending secondary wake-up probe..."
+            curl -I --max-time 45 "https://ayaandevloper408-docmind-ai-backend.hf.space/" || true
+            exit 0
+          fi
