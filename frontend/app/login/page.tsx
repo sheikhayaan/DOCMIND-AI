@@ -757,37 +757,7 @@ export default function LoginPage() {
           to { transform: rotate(360deg); }
         }
 
-        .admin-link-box {
-          text-align: center;
-          font-size: 12px;
-          color: rgba(255, 255, 255, 0.4);
-          padding-top: 10px;
-          border-top: 1px solid rgba(255, 255, 255, 0.05);
-        }
 
-        .admin-link {
-          background: rgba(129, 140, 248, 0.1);
-          border: 1px solid rgba(129, 140, 248, 0.25);
-          color: #a5b4fc;
-          cursor: pointer;
-          font-size: 12px;
-          font-weight: 600;
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          padding: 5px 11px;
-          border-radius: 999px;
-          margin-left: 6px;
-          transition: all 0.2s ease;
-        }
-
-        .admin-link:hover {
-          background: rgba(129, 140, 248, 0.2);
-          color: #fff;
-          border-color: rgba(165, 180, 252, 0.5);
-          box-shadow: 0 0 15px rgba(129, 140, 248, 0.3);
-          text-decoration: underline;
-        }
 
         @media (max-width: 640px) {
           /* Keep the form close to the top of the fold on phones. */
