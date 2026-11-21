@@ -1445,6 +1445,14 @@ def answer_question(
 
         if not vector_results:
             trace.set_retrieval(confidence=0.85, confidence_level="high")
+            general_news_items: list[dict[str, str]] = []
+            try:
+                from news_service import detect_news_intent, fetch_latest_news
+                if detect_news_intent(question):
+                    general_news_items = fetch_latest_news(query=question, max_items=3)
+            except Exception:
+                pass
+
             try:
                 answer, prompt_tokens, completion_tokens = generate_general_answer(
                     question,
@@ -1477,7 +1485,7 @@ def answer_question(
                 "confidence": "high",
                 "confidence_score": 0.85,
                 "answer_source": "general",
-                "news_sources": [],
+                "news_sources": general_news_items,
             }
 
         keyword_results = keyword_search(rewritten_query, doc_ids, vector_results)
