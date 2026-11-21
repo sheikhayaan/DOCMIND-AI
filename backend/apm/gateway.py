@@ -40,7 +40,7 @@ class LLMGateway:
 
     def __init__(self, models: list[str] | None = None, tracker: IncidentTracker = incident_tracker, clock: Callable[[], float] = time.monotonic) -> None:
         """Creates process-local breakers without making a network call at import time."""
-        configured = models or [os.getenv("GROQ_PRIMARY_MODEL", "llama-3.1-8b-instant"), *os.getenv("GROQ_FALLBACK_MODELS", "llama-3.3-70b-versatile").split(",")]
+        configured = models or [os.getenv("GROQ_PRIMARY_MODEL", "qwen/qwen3.8-27b"), *os.getenv("GROQ_FALLBACK_MODELS", "openai/gpt-oss-120b,openai/gpt-oss-20b,llama-3.1-8b-instant").split(",")]
         self.models = list(dict.fromkeys(model.strip() for model in configured if model.strip()))[:5]
         self.states = {model: Circuit() for model in self.models}
         self.lock = threading.RLock()
