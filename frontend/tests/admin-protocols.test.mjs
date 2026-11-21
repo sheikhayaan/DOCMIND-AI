@@ -46,7 +46,7 @@ test('every protected native JSON request includes bearer, content type, and cro
   await api.finishSession('session-1', null);
   await api.finishSession('session-1', 4);
   for (const { init } of calls) {
-    assert.equal(init.credentials, 'include');
+    assert.equal(init.credentials, 'same-origin');
     assert.equal(init.headers.Authorization, 'Bearer signed-test-token');
     assert.equal(init.headers['Content-Type'], 'application/json');
     assert.equal(init.cache, 'no-store');
@@ -82,7 +82,7 @@ test('chat fetches carry authentication and bound string history', async () => {
   const api = loadTypeScript('lib/api.ts', { './recaptcha': { getRecaptchaToken: async () => null } });
   await api.queryDocument('Question', 'doc', undefined, [{ role: 'assistant', content: 'x'.repeat(6000) }]);
   const request = calls[0].init;
-  assert.equal(request.credentials, 'include');
+  assert.equal(request.credentials, 'same-origin');
   assert.equal(new Headers(request.headers).get('Authorization'), 'Bearer signed-test-token');
   assert.equal(new Headers(request.headers).get('Content-Type'), 'application/json');
   assert.equal(JSON.parse(request.body).history[0].content.length, 4000);

@@ -273,7 +273,7 @@ export async function ensureAccessToken(): Promise<string> {
     try {
       const response = await fetch(`${API_URL}/auth/session`, {
         method: "POST",
-        credentials: "include",
+        credentials: "same-origin",
         // Token issuance is public; every authenticated fetch below sends a real bearer.
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -326,7 +326,7 @@ async function request(input: RequestInfo | URL, init: RequestInit): Promise<Res
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
       if (init.signal?.aborted) throw new DOMException("Request cancelled", "AbortError");
-      const response = await fetch(input, { ...init, headers, credentials: "include" });
+      const response = await fetch(input, { ...init, headers, credentials: "same-origin" });
       // A provider's 401 is not proof that the user's session is invalid. Never
       // discard identity/document ownership or mint a guest on an arbitrary API failure.
       if (canRetry && attempt + 1 < attempts && RETRYABLE_STATUS.has(response.status)) {
@@ -347,7 +347,7 @@ async function request(input: RequestInfo | URL, init: RequestInit): Promise<Res
 export async function loginAdmin(email: string, adminToken: string): Promise<AuthSessionResponse> {
   const response = await fetch(`${API_URL}/auth/session`, {
     method: "POST",
-    credentials: "include",
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, admin_token: adminToken }),
   });
@@ -368,7 +368,7 @@ export async function signUpWithEmail(
 ): Promise<AuthSessionResponse> {
   const response = await fetch(`${API_URL}/auth/signup`, {
     method: "POST",
-    credentials: "include",
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
@@ -389,7 +389,7 @@ export async function loginWithEmail(
 ): Promise<AuthSessionResponse> {
   const response = await fetch(`${API_URL}/auth/login`, {
     method: "POST",
-    credentials: "include",
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
@@ -413,7 +413,7 @@ export function isSignedIn(): boolean {
 export async function loginWithGoogle(credential: string): Promise<AuthSessionResponse> {
   const response = await fetch(`${API_URL}/auth/google`, {
     method: "POST",
-    credentials: "include",
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ credential }),
   });

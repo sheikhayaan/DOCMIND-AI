@@ -73,7 +73,7 @@ function sendVital(name: VitalName, value: number, delta = value): void {
     .then((token) =>
       window.fetch(`${API_URL}/vitals`, {
         method: 'POST',
-        credentials: 'include',
+        credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,

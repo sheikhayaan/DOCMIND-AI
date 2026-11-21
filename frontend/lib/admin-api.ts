@@ -24,7 +24,7 @@ export async function protectedJson<T>(url: string, method = 'GET', body?: unkno
   try {
     const response = await fetch(url, {
       method,
-      credentials: 'include',
+      credentials: 'same-origin',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       cache: 'no-store',
       signal: controller.signal,

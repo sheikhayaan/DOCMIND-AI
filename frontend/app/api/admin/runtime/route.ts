@@ -14,7 +14,7 @@ export async function GET(request: Request): Promise<Response> {
   try {
     const verified = await fetch(`${apiUrl}/api/admin/telemetry`, {
       headers: { Authorization: authorization, 'Content-Type': 'application/json' },
-      credentials: 'include',
+      credentials: 'same-origin',
       cache: 'no-store',
       redirect: 'error',
       signal: AbortSignal.timeout(6000),
