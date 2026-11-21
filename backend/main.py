@@ -555,10 +555,11 @@ async def query_document(request_body: QueryRequest, request: Request) -> QueryR
         "doc_ids": result.get("doc_ids", []),
         "session_id": effective_session_id,
         "confidence": result.get("confidence"),
-            "confidence_score": result.get("confidence_score"),
-            "answer_source": result.get("answer_source"),
-            "question_slots": pdf_limiter.can_ask(user_id),
-        }
+        "confidence_score": result.get("confidence_score"),
+        "answer_source": result.get("answer_source"),
+        "news_sources": result.get("news_sources", []),
+        "question_slots": pdf_limiter.can_ask(user_id),
+    }
     return QueryResponse(**result)
 
 

@@ -170,6 +170,7 @@ export type QueryResponse = {
   confidence: "high" | "medium" | "low";
   confidence_score: number;
   answer_source?: "document" | "general" | "assistant";
+  news_sources?: Array<{ title: string; link: string; source: string }>;
 };
 
 export type SessionResponse = {

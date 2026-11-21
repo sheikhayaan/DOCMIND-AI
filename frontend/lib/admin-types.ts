@@ -180,6 +180,10 @@ export interface LearningStats {
     use_count: number;
   }[];
   optimizations_applied: number;
+  collective_sessions?: number;
+  collective_insights?: number;
+  news_grounding_status?: string;
+  intelligence_mode?: string;
 }
 
 export interface LearningOptimizationResult {
@@ -189,4 +193,5 @@ export interface LearningOptimizationResult {
   exemplars_evaluated: number;
   adaptive_top_k: number;
   active_engine: string;
+  collective_insights_synthesized?: number;
 }

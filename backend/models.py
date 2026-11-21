@@ -198,6 +198,7 @@ class QueryResponse(BaseModel):
     confidence: str
     confidence_score: float
     answer_source: str | None = None
+    news_sources: list[dict[str, str]] = Field(default_factory=list)
 
 
 class ErrorResponse(BaseModel):

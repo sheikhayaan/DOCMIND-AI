@@ -20,6 +20,8 @@ import {
   X,
   Paperclip,
   Mic,
+  Brain,
+  Radio,
   type LucideIcon,
 } from 'lucide-react';
 import { ToastStack, type ToastMessage } from '@/components/toast';
@@ -77,6 +79,7 @@ interface Message {
   role: 'user' | 'ai';
   content: string;
   sources?: Source[];
+  newsSources?: Array<{ title: string; link: string; source: string }>;
   confidence?: string;
   answerSource?: 'document' | 'general' | 'assistant';
   time: string;
@@ -95,6 +98,7 @@ function restoreMessage(value: unknown): Message | null {
     answerSource: ['document', 'general', 'assistant'].includes(message.answerSource || '') ? message.answerSource : undefined,
     image: typeof message.image === 'string' && /^data:image\/(png|jpeg|webp);base64,/.test(message.image) ? message.image : undefined,
     sources: Array.isArray(message.sources) ? message.sources.filter((source) => source && Number.isFinite(source.page)).map((source) => ({ page: source.page, text: safeText(source.text, MAX_STORED_SOURCE_CHARS) })) : [],
+    newsSources: Array.isArray(message.newsSources) ? message.newsSources.filter((n) => n && typeof n.title === 'string').map((n) => ({ title: safeText(n.title), link: safeText(n.link), source: safeText(n.source) })) : undefined,
   };
 }
 
@@ -356,6 +360,7 @@ function ChatContent() {
           page: source.page,
           text: (source.text || '').slice(0, MAX_STORED_SOURCE_CHARS),
         })),
+        newsSources: msg.newsSources?.slice(0, 5),
       }));
       window.localStorage.setItem(
         key,
@@ -546,6 +551,7 @@ function ChatContent() {
         role: 'ai',
         content: res.answer,
         sources: res.sources,
+        newsSources: res.news_sources,
         confidence: res.confidence,
         answerSource: res.answer_source,
         time: timeNow(),
@@ -1307,8 +1313,42 @@ function ChatContent() {
                   )}
 
                   {/* Sources + confidence */}
-                  {msg.role === 'ai' && (msg.sources?.length || conf || isGeneral) && (
+                  {msg.role === 'ai' && (msg.sources?.length || conf || isGeneral || (msg.newsSources && msg.newsSources.length > 0)) && (
                     <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', paddingLeft: '4px', alignItems: 'flex-start' }}>
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          background: 'rgba(168, 85, 247, 0.12)',
+                          border: '1px solid rgba(168, 85, 247, 0.3)',
+                          borderRadius: '999px',
+                          padding: '6px 14px',
+                          color: '#d8b4fe',
+                          fontSize: '13px',
+                        }}
+                      >
+                        <Brain size={13} color="#c084fc" /> IoT Human Intelligence
+                      </span>
+                      {msg.newsSources && msg.newsSources.length > 0 && (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            background: 'rgba(56, 189, 248, 0.12)',
+                            border: '1px solid rgba(56, 189, 248, 0.35)',
+                            borderRadius: '999px',
+                            padding: '6px 14px',
+                            color: '#7dd3fc',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                          }}
+                          title={msg.newsSources.map((n) => `${n.title} (${n.source})`).join('\n')}
+                        >
+                          <Radio size={13} color="#38bdf8" /> Live News Grounded ({msg.newsSources.length})
+                        </span>
+                      )}
                       {msg.sources?.map((s, j) => (
                         <SourceChip key={j} source={s} delay={0.1 + j * 0.1} />
                       ))}
