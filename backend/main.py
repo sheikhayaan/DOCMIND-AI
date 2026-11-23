@@ -544,6 +544,19 @@ async def query_document(request_body: QueryRequest, request: Request) -> QueryR
         await run_in_threadpool(learning_store.record_session_qa, effective_session_id, question, str(result.get("answer", "")), doc_ids[0] if doc_ids else "")
     except Exception:
         pass
+    try:
+        from self_healing import self_healing_engine
+        await run_in_threadpool(
+            self_healing_engine.record_query_telemetry,
+            question,
+            doc_ids[0] if doc_ids else "",
+            float(result.get("confidence_score") or 0.8),
+            str(result.get("answer_source") or "document"),
+            False,
+            "",
+        )
+    except Exception:
+        pass
     pdf_limiter.mark_question(user_id, doc_ids)
     audit_logger.log("question_asked", user_id, client_ip, {"doc_ids": doc_ids, "message_length": len(question)})
     result["session_id"] = effective_session_id
@@ -632,3 +645,21 @@ async def admin_metrics(request: Request) -> dict[str, object]:
     await rate_limiter.check(request, "general")
     audit_logger.log("admin_metrics_viewed", admin_user["sub"], client_ip, {})
     return {"success": True, "data": security_store.admin_snapshot(), "error": None}
+
+
+# Returns real-time health metrics, active patches, and healed events from the autonomous self-healing engine.
+@app.get("/api/self-healing/status")
+async def get_self_healing_status(request: Request) -> dict[str, object]:
+    await rate_limiter.check(request, "general")
+    from self_healing import self_healing_engine
+    status = await run_in_threadpool(self_healing_engine.get_status)
+    return {"success": True, "data": status.model_dump(), "error": None}
+
+
+# Manually triggers an autonomous diagnostic and healing cycle.
+@app.post("/api/self-healing/heal")
+async def trigger_self_healing(request: Request) -> dict[str, object]:
+    await rate_limiter.check(request, "admin")
+    from self_healing import self_healing_engine
+    result = await run_in_threadpool(self_healing_engine.apply_self_healing_action, "Manual Diagnostic Trigger")
+    return {"success": True, "data": result, "error": None}

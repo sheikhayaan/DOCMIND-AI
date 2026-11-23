@@ -20,6 +20,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pinecone import Pinecone
 
 from session_store import session_store
+from self_healing import self_healing_engine
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -177,6 +178,22 @@ def ingest_pdf(
         "page_count": total_rows(page_count),
     }
 
+    # Save exact page and chunk text durably to eliminate page hallucination
+    try:
+        pages_text = [(i + 1, page.page_content) for i, page in enumerate(pages)]
+        chunks_data = [
+            (
+                f"{doc_id}-{idx}",
+                int(chunk.metadata.get("page", 1)),
+                int(chunk.metadata.get("chunk_index", idx)),
+                chunk.page_content,
+            )
+            for idx, chunk in enumerate(chunks)
+        ]
+        self_healing_engine.save_pages_and_chunks(doc_id, safe_filename, pages_text, chunks_data)
+    except Exception as exc:
+        print(f"Warning: Failed to save durable page store: {exc}")
+
     return len(chunks)
 
 
@@ -190,6 +207,7 @@ def create_session(doc_ids: list[str], user_id: str = "") -> str:
 def delete_doc(doc_id: str) -> bool:
     LOCAL_DOC_CHUNKS.pop(doc_id, None)
     DOC_METADATA.pop(doc_id, None)
+    self_healing_engine.delete_document_pages(doc_id)
     index_name = os.getenv("PINECONE_INDEX_NAME")
     if not index_name:
         return True

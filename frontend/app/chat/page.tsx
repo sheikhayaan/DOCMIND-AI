@@ -22,6 +22,7 @@ import {
   Mic,
   Brain,
   Radio,
+  Star,
   type LucideIcon,
 } from 'lucide-react';
 import { ToastStack, type ToastMessage } from '@/components/toast';
@@ -243,6 +244,7 @@ function ChatContent() {
   const [hydrated, setHydrated] = useState(false);
   const [hydratedDocId, setHydratedDocId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionEnded, setSessionEnded] = useState(false);
   const [turnIndex, setTurnIndex] = useState(1);
   const requestRef = useRef<AbortController | null>(null);
   const turnRequestRef = useRef(0);
@@ -527,6 +529,7 @@ function ChatContent() {
     if (fileInputRef.current) fileInputRef.current.value = '';
     setLoading(true);
     setSuggestions(null);
+    setSessionEnded(false);
 
     const userMsg: Message = {
       role: 'user',
@@ -594,7 +597,7 @@ function ChatContent() {
     turnRequestRef.current += 1;
     requestRef.current?.abort(); requestRef.current = null;
     stopDictation(); setIsListening(false);
-    setLoading(false); setInput(''); setSessionId(null);
+    setLoading(false); setInput(''); setSessionId(null); setSessionEnded(false);
     removeAttachedImage();
     setTurnIndex((value) => value + 1);
     textareaRef.current?.focus();
@@ -606,7 +609,7 @@ function ChatContent() {
     turnRequestRef.current += 1;
     requestRef.current?.abort(); requestRef.current = null;
     stopDictation(); setIsListening(false); setLoading(false);
-    setSessionId(null); setTurnIndex(1);
+    setSessionId(null); setTurnIndex(1); setSessionEnded(false);
     setMessages([]);
     setHistory([]);
     deleteConversation(docId);
@@ -821,6 +824,30 @@ function ChatContent() {
         >
           {docType}
         </span>
+        {messages.length > 0 && !sessionEnded && (
+          <button
+            type="button"
+            onClick={() => setSessionEnded(true)}
+            title="Finish conversation and leave rating"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              flexShrink: 0,
+              padding: '5px 12px',
+              borderRadius: '999px',
+              border: '1px solid rgba(129, 140, 248, 0.4)',
+              background: 'rgba(99, 102, 241, 0.15)',
+              color: '#a5b4fc',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            <Star size={12} />
+            Finish & Rate
+          </button>
+        )}
         {messages.length > 0 && (
           <button
             type="button"
@@ -1459,10 +1486,60 @@ function ChatContent() {
             </motion.div>
           )}
 
-          {sessionId && !loading && <SessionRating key={sessionId} sessionId={sessionId} onCompleted={(finishedId) => {
-            setSessionId((current) => current === finishedId ? null : current);
-            showToast('Session completed. Thanks for your feedback.');
-          }} />}
+          {/* Subtle rating prompt offered once conversation is underway, without popping up on every answer */}
+          {sessionId && !loading && !sessionEnded && messages.length >= 2 && (
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                padding: '12px 0 4px',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setSessionEnded(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '999px',
+                  padding: '5px 14px',
+                  color: 'rgba(255, 255, 255, 0.55)',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'rgba(129, 140, 248, 0.4)';
+                  e.currentTarget.style.color = '#c7d2fe';
+                  e.currentTarget.style.background = 'rgba(99, 102, 241, 0.08)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                  e.currentTarget.style.color = 'rgba(255, 255, 255, 0.55)';
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                }}
+              >
+                <Star size={12} style={{ color: '#fbbf24' }} />
+                <span>Finished this conversation? Leave a rating</span>
+              </button>
+            </div>
+          )}
+
+          {/* Full rating card shown ONLY at the end of the conversation when user finishes */}
+          {sessionId && !loading && sessionEnded && (
+            <SessionRating
+              key={sessionId}
+              sessionId={sessionId}
+              onCompleted={(finishedId) => {
+                setSessionId((current) => (current === finishedId ? null : current));
+                setSessionEnded(false);
+                showToast('Session completed. Thanks for your feedback.');
+              }}
+            />
+          )}
           <div ref={bottomRef} />
         </div>
       </div>
